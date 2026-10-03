@@ -28,12 +28,41 @@ NovaUnlock Desktop
 ## Prérequis
 
 - Windows 10/11 x64
-- Node.js 18+
+- Pour compiler : Node.js **x64**, branche **22 à partir de 22.22.2** ou **24 à partir de 24.15.0** (versions compatibles avec les dépendances verrouillées ; Node 18 n’est plus suffisant). Node.js n’est pas nécessaire pour utiliser l’application déjà installée.
 - Un câble USB compatible
 - Apple Devices ou iTunes / Apple Mobile Device USB Driver pour l'appairage en mode Normal
 - Un paquet **Windows x64** complet de `libimobiledevice` (exécutables **et** DLL) pour le build final ou les opérations USB avancées
 
-### Préparer les binaires natifs pour un installateur
+### Créer l’installateur sans saisir de commandes (Windows)
+
+1. Récupérez le **projet complet** sur votre PC, par exemple dans `C:\Users\hp\NovaUnlock-Desktop`. Ne déplacez pas le lanceur seul.
+2. Installez une version compatible de **Node.js x64** depuis [nodejs.org](https://nodejs.org), si nécessaire.
+3. Obtenez un paquet **libimobiledevice Windows x64 de confiance**, avec ses DLL et ses licences, puis extrayez-le. L’assistant ne télécharge pas ces binaires.
+4. Dans l’Explorateur Windows, double-cliquez sur **`Creer-installateur-Windows.cmd`**.
+5. Choisissez le dossier extrait quand le sélecteur s’ouvre, puis gardez la fenêtre ouverte jusqu’à la fin.
+
+Le lanceur se place lui-même dans le dossier du projet, contrôle Node/npm, prépare et vérifie les fichiers natifs, installe les dépendances verrouillées avec `npm ci --include=dev`, puis lance `package:win`. Il s’arrête à la première erreur. La fenêtre reste ouverte pour lire les messages ; en cas d’annulation du sélecteur, aucune copie, installation de dépendances ou compilation n’est lancée.
+
+Un paquet complet déjà présent dans `native/libimobiledevice` est réutilisé. Une variable `NOVAUNLOCK_NATIVE_DIR` déjà définie permet de le remplacer sans ouvrir le sélecteur. La source de remplacement doit être complète : les anciens fichiers de destination ne peuvent pas masquer les fichiers manquants dans la source.
+
+À la fin, l’Explorateur ouvre **`release`**, qui contient deux fichiers distincts :
+
+- `NovaUnlock-Setup-<version>-x64.exe` : installateur Windows ;
+- `NovaUnlock-Portable-<version>-x64.exe` : application portable.
+
+Une connexion Internet est nécessaire pour les dépendances npm et les composants de compilation téléchargés par Electron Builder. Aucun changement de la politique PowerShell ni installation automatique de Node.js ou de pilotes Apple n’est effectué. Ne lancez qu’une construction à la fois dans un même dossier.
+
+### Configurer les outils depuis l’application
+
+Dans **Paramètres** ou **Connexion USB**, l’**Assistant de configuration** contrôle automatiquement les fichiers disponibles. Cliquez sur **Configurer automatiquement**, puis sélectionnez le paquet extrait de confiance. La copie dans le répertoire utilisateur et la vérification finale s’enchaînent sans commandes, sans Node.js et sans modification de `Program Files`.
+
+L’assistant affiche chaque exécutable requis et la présence de DLL. `ideviceenterrecovery.exe` reste facultatif. Vous pouvez annuler, réessayer en cas d’erreur ou cliquer sur **Revérifier** après une modification. Les fichiers fournis avec un installateur complet sont détectés sans réimportation.
+
+> Ce contrôle vérifie la **présence des fichiers**, pas leur authenticité, leur architecture ni la compatibilité de toutes leurs DLL. Les pilotes Apple, le câble et l’appairage doivent encore être vérifiés à la connexion. Aucune action sur l’appareil n’est lancée par l’assistant.
+>
+> **Configuration et construction sont distinctes** : l’application installée configure ses outils USB ; la création du premier installateur se fait depuis les sources avec le lanceur Windows. L’application n’expose aucune commande de compilation au renderer.
+
+### Préparer les binaires natifs manuellement (alternative)
 
 Les `.exe`, `.dll` et archives ne sont pas committés dans Git. Avant un package Windows, obtenez et extrayez une distribution x64 validée par votre organisation, puis exécutez :
 
@@ -46,7 +75,7 @@ npm run package:win
 
 Les commandes de packaging lancent déjà `verify:native` : elles échouent volontairement si `ideviceinfo.exe`, `idevice_id.exe`, `ideviceactivation.exe`, `idevicebackup2.exe`, `idevicerestore.exe`, `irecovery.exe` ou les DLL associées sont absents. Voir [`native/libimobiledevice/README.md`](native/libimobiledevice/README.md).
 
-Un utilisateur d'une application déjà installée peut aussi choisir le dossier extrait depuis **Connexion USB → Importer / mettre à jour**. Le payload est alors copié dans son répertoire utilisateur, sans écriture dans `Program Files`.
+Un utilisateur d’une application déjà installée choisit le dossier extrait depuis **Connexion USB → Assistant de configuration → Configurer automatiquement** (également disponible dans **Paramètres**). Le payload est copié dans son répertoire utilisateur, sans écriture dans `Program Files`.
 
 ---
 
@@ -69,8 +98,9 @@ npm run lint                   # ESLint
 npm run build:all              # Compile sans produire d'installeur
 npm run prepare:native         # Stage un payload local via NOVAUNLOCK_NATIVE_DIR
 npm run verify:native          # Vérifie les outils/DLL avant packaging
-npm run package:win            # Installeur NSIS Windows x64
-npm run package:win:portable   # Binaire portable Windows x64
+npm run package:win            # Installateur NSIS et portable Windows x64
+npm run package:win:assisted   # Assistant Windows (équivalent au double-clic .cmd)
+npm run package:win:portable   # Binaire portable Windows x64 uniquement
 ```
 
 Les fichiers d'installation sont produits dans `release/`.

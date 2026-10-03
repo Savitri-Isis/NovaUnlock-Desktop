@@ -138,7 +138,7 @@ export type USBChannel = {
   getECID: () => Promise<string | null>;
   getActivationLockStatus: () => Promise<ActivationLockStatus>;
   checkJailbreakStatus: () => Promise<boolean>;
-  installLibimobiledevice: () => Promise<{ success: boolean; message: string; status: NativeToolStatus }>;
+  installLibimobiledevice: () => Promise<{ success: boolean; canceled?: boolean; message: string; status: NativeToolStatus }>;
   listBackups: () => Promise<
     Array<{
       path: string;

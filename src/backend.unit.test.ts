@@ -84,6 +84,35 @@ describe("USB Scanner & Native Runner — Tests unitaires et sécurité", () => 
     }
   });
 
+  it("n'importe pas des utilitaires sans la paire d'outils de diagnostic et trouve le bon sous-dossier", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "novaunlock-payload-selection-"));
+    const invalid = path.join(root, "archive", "not-diagnostics");
+    const valid = path.join(root, "archive", "diagnostics");
+    const destination = path.join(root, "runtime");
+    fs.mkdirSync(invalid, { recursive: true });
+    fs.mkdirSync(valid, { recursive: true });
+    for (const file of ["ideviceactivation.exe", "idevicebackup2.exe", "idevicerestore.exe", "irecovery.exe"]) {
+      fs.writeFileSync(path.join(invalid, file), "test fixture, never executed");
+    }
+    for (const file of ["idevice_id.exe", "ideviceinfo.exe", "native.dll"]) {
+      fs.writeFileSync(path.join(valid, file), "test fixture, never executed");
+    }
+    try {
+      const rejected = importNativePayload(invalid, destination);
+      expect(rejected.success).toBe(false);
+      expect(rejected.importedFiles).toEqual([]);
+      expect(fs.existsSync(destination)).toBe(false);
+      const imported = importNativePayload(path.join(root, "archive"), destination);
+      expect(imported.success).toBe(true);
+      expect(imported.status.diagnosticsReady).toBe(true);
+      expect(imported.status.hasDlls).toBe(true);
+      expect(imported.status.complete).toBe(false);
+      expect(imported.importedFiles).not.toContain("idevicerestore.exe");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("valide strictement les chemins IPSW (validateIpswPath)", () => {
     expect(() => validateIpswPath("")).toThrow(/invalide/i);
     expect(() => validateIpswPath(null)).toThrow(/invalide/i);

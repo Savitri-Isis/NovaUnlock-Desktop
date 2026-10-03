@@ -260,7 +260,11 @@ function payloadScore(directory: string): number {
         .filter((entry) => entry.isFile())
         .map((entry) => entry.name.toLowerCase())
     );
-    return Object.values(NATIVE_TOOL_FILES).filter((name) => files.has(name.toLowerCase())).length;
+    if (!files.has(NATIVE_TOOL_FILES.deviceId) || !files.has(NATIVE_TOOL_FILES.deviceInfo)) return -1;
+    // Prefer required utilities to the optional enterRecovery tool, then DLLs.
+    const requiredCount = REQUIRED_NATIVE_TOOLS.filter((tool) => files.has(NATIVE_TOOL_FILES[tool])).length;
+    const dllBonus = [...files].some((name) => name.endsWith(".dll")) ? 0.5 : 0;
+    return requiredCount + dllBonus;
   } catch {
     return -1;
   }
