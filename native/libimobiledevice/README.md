@@ -1,8 +1,8 @@
 # Binaires natifs `libimobiledevice` (Windows x64)
 
-Ce dossier ne contient volontairement **aucun exécutable ni DLL** dans Git. Les binaires Windows peuvent être soumis à des licences différentes selon l'utilitaire ; ils doivent être obtenus depuis une distribution `libimobiledevice` Windows x64 de confiance, avec ses avis de licence.
+Ce dossier ne versionne volontairement **aucun exécutable ni DLL** dans Git. Les binaires natifs sont produits localement depuis des sources amont épinglées avec `Construire-outils-libimobiledevice-Windows.cmd`, ou fournis sous forme de paquet Windows x64 approuvé avec ses avis de licence.
 
-NovaUnlock ne télécharge ni n'exécute automatiquement un binaire trouvé sur Internet. Cela évite de transformer le packaging en chaîne d'approvisionnement non vérifiée.
+NovaUnlock ne télécharge ni n'exécute automatiquement de binaires natifs précompilés. Le constructeur séparé récupère le code source et les paquets d’outils de compilation signés par MSYS2, vérifie les commits épinglés, puis compile localement. Cela évite d’intégrer silencieusement une collection d’exécutables tiers non vérifiés.
 
 ## Capacités attendues
 
@@ -19,13 +19,19 @@ NovaUnlock ne télécharge ni n'exécute automatiquement un binaire trouvé sur 
 
 > `Activated` n'est pas équivalent à « Activation Lock désactivé ». NovaUnlock n'autorise une restauration maître que lorsqu'un outil fournit un statut de verrouillage explicitement déverrouillé ; sinon il bloque l'opération.
 
+## Construire le payload local depuis les sources amont (Windows)
+
+Si vous ne disposez pas d’un paquet natif approuvé, installez MSYS2 x64 depuis [msys2.org](https://www.msys2.org/), mettez-le à jour avec `pacman -Syu`, puis double-cliquez sur **`Construire-outils-libimobiledevice-Windows.cmd`**. Le script utilise l’environnement UCRT64, récupère les versions officielles épinglées dans [`scripts/native-sources.lock`](../../scripts/native-sources.lock), vérifie les commits, compile les outils, collecte leurs DLL d’exécution et crée `NOTICE.txt` avec les licences trouvées. La connexion Internet est requise.
+
+La compilation n’exécute pas les outils et ne teste aucun iPhone. Les sources temporaires sont supprimées après la compilation ; les journaux d’échec restent dans `.native-build/logs`. Les binaires locaux sont ignorés par Git. Après réussite, double-cliquez sur **`Creer-installateur-Windows.cmd`** pour construire l’installateur.
+
 ## Création guidée de l’installateur (sans commandes)
 
 Depuis le dossier du projet complet, double-cliquez sur **`Creer-installateur-Windows.cmd`**. Node.js x64 compatible doit être installé (22.22.2+ dans la branche 22, ou 24.15.0+ dans la branche 24).
 
 Si aucun paquet complet n’est déjà présent ici, une fenêtre vous demande le dossier **extrait** de confiance. L’assistant prépare les fichiers, les vérifie, installe les dépendances verrouillées puis construit l’installateur et le portable dans `release`. Il s’arrête en cas d’erreur et conserve les messages dans la console ouverte. Une source de remplacement incomplète est refusée avant toute copie, même si un ancien paquet complet existe déjà ici.
 
-Aucun téléchargement de libimobiledevice, installation de pilotes ou changement de politique PowerShell n’est effectué. Les dépendances npm et composants de compilation nécessitent Internet. Node.js est requis uniquement sur le PC de construction, pas sur celui qui utilise une application déjà installée.
+Le lanceur **`Creer-installateur-Windows.cmd`** ne télécharge pas de binaires natifs et n’installe ni pilotes Apple ni Node.js. Le constructeur séparé `Construire-outils-libimobiledevice-Windows.cmd` télécharge uniquement les sources amont épinglées et les paquets de compilation MSYS2, puis compile localement. Les dépendances npm et composants de compilation nécessitent Internet. Node.js est requis uniquement sur le PC de construction, pas sur celui qui utilise une application déjà installée.
 
 ## Pour les développeurs et le build Windows (alternative manuelle)
 

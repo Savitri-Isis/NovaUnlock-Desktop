@@ -35,7 +35,8 @@ function verifyNative(location = directory) {
     console.error(`Dossier vérifié : ${location}`);
     if (missing.length) console.error(`Exécutables manquants : ${missing.join(", ")}`);
     if (dlls.length === 0) console.error("DLL manquantes : copiez le paquet Windows x64 complet, pas uniquement les .exe.");
-    console.error("\nDouble-cliquez sur Creer-installateur-Windows.cmd pour sélectionner un paquet extrait de confiance.");
+    console.error("\nOption source : installez MSYS2 x64, puis double-cliquez sur Construire-outils-libimobiledevice-Windows.cmd.");
+    console.error("Option archive : utilisez Creer-installateur-Windows.cmd et sélectionnez un paquet extrait de confiance.");
     console.error('Ou utilisez : npm run prepare:native -- "C:\\chemin\\vers\\dossier-extrait"');
     return false;
   }
