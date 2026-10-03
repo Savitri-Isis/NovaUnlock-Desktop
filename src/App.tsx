@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "./renderer/Dashboard";
 import DeviceConnect from "./renderer/DeviceConnect";
 import DFU from "./renderer/DFU";
@@ -24,6 +24,7 @@ export default function App() {
             <Route path="/firmware" element={<Firmware />} />
             <Route path="/device-info" element={<DeviceInfo />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
