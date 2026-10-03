@@ -31,7 +31,7 @@ export default function Settings() {
           </div>
           <div className="flex justify-between">
             <span className="text-sm text-muted">Moteur USB</span>
-            <span className="text-sm font-mono text-foreground">node-hid / node-usb</span>
+            <span className="text-sm font-mono text-foreground">node-hid / usb 3.1</span>
           </div>
         </div>
       </div>

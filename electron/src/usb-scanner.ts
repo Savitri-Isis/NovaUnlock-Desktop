@@ -3,7 +3,7 @@
  *
  * Architecture USB pour Windows :
  * 1. node-hid — Détection HID (Low-level USB HID devices)
- * 2. node-usb — Communication USB bulk (DFU, Recovery, Normal mode)
+ * 2. usb — Communication USB bulk (DFU, Recovery, Normal mode)
  * 3. libimobiledevice — Protocole Apple (iDevice API, AFC, AFC2, Plist)
  *
  * Sur Windows, libimobiledevice nécessite :
@@ -129,7 +129,7 @@ async function scanWithNodeHid(): Promise<USBDevice | null> {
     const appleDevice = devices.find((d: any) => d.vendorId === APPLE_VENDOR_ID);
 
     if (!appleDevice) {
-      // Fallback : utiliser node-usb pour détecter les appareils non-HID
+      // Fallback : utiliser usb pour détecter les appareils non-HID
       return await scanWithNodeUSB();
     }
 
@@ -151,24 +151,26 @@ async function scanWithNodeHid(): Promise<USBDevice | null> {
 
 async function scanWithNodeUSB(): Promise<USBDevice | null> {
   try {
-    const usb = require("usb");
-    const devices = usb.getDeviceList();
-    const appleDevice = devices.find((d: any) => d.deviceDescriptor.idVendor === APPLE_VENDOR_ID);
+    // usb@3.x expose une API WebUSB asynchrone (l’ancienne API getDeviceList
+    // appartenait à node-usb/usb v2 et n’existe plus).
+    const { usb } = require("usb");
+    const devices = await usb.getDevices();
+    const appleDevice = devices.find((d: any) => d.vendorId === APPLE_VENDOR_ID);
 
     if (!appleDevice) {
       return null;
     }
 
     return {
-      deviceId: appleDevice.deviceDescriptor.bcdDevice,
-      vendorId: appleDevice.deviceDescriptor.idVendor,
-      productId: appleDevice.deviceDescriptor.idProduct,
-      deviceName: "Apple Device",
-      productName: "iPhone",
-      serialNumber: null,
-      manufacturer: "Apple Inc.",
-      mode: getModeFromProductId(appleDevice.deviceDescriptor.idProduct),
-      connectionId: `${appleDevice.deviceDescriptor.idVendor}-${appleDevice.deviceDescriptor.idProduct}`,
+      deviceId: appleDevice.address,
+      vendorId: appleDevice.vendorId,
+      productId: appleDevice.productId,
+      deviceName: appleDevice.productName || "Apple Device",
+      productName: appleDevice.productName || "iPhone",
+      serialNumber: appleDevice.serialNumber || null,
+      manufacturer: appleDevice.manufacturerName || "Apple Inc.",
+      mode: getModeFromProductId(appleDevice.productId),
+      connectionId: `${appleDevice.vendorId}-${appleDevice.productId}-${appleDevice.serialNumber || appleDevice.address}`,
     };
   } catch {
     return null;
