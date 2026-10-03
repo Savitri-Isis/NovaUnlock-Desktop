@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "generatedAt": "",
+  "sourceArchive": "libimobiledevice-win-x64.zip",
+  "sourceArchiveSha256": "",
+  "note": "Rempli automatiquement par scripts/prepare-native-archive.cjs après import d’une archive réelle.",
+  "files": []
+}

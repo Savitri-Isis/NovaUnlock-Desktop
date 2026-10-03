@@ -16,7 +16,8 @@
     "package:win:portable": "npm run verify:native && npm run build:all && electron-builder --win portable",
     "test": "vitest run",
     "lint": "eslint src electron --ext .ts,.tsx",
-    "package:win:assisted": "node scripts/package-windows.cjs"
+    "package:win:assisted": "node scripts/package-windows.cjs",
+    "prepare:native:archive": "node scripts/prepare-native-archive.cjs"
   },
   "build": {
     "appId": "com.novaunlock.desktop",

@@ -2,6 +2,8 @@
 
 Ce dossier ne contient volontairement **aucun exécutable ni DLL** dans Git. Les binaires Windows peuvent être soumis à des licences différentes selon l'utilitaire ; ils doivent être obtenus depuis une distribution `libimobiledevice` Windows x64 de confiance, avec ses avis de licence.
 
+La compilation Windows officielle du projet amont passe par **MSYS2**. Une distribution tierce de binaires, telle que le dépôt `jrjr/libimobiledevice-windows`, doit être contrôlée par l’utilisateur : version, architecture x64, provenance, empreinte SHA-256 et licences avant toute utilisation.
+
 NovaUnlock ne télécharge ni n'exécute automatiquement un binaire trouvé sur Internet. Cela évite de transformer le packaging en chaîne d'approvisionnement non vérifiée.
 
 ## Capacités attendues
@@ -43,6 +45,19 @@ npm run prepare:native
 npm run verify:native
 npm run package:win
 ```
+
+### Importer une archive ZIP complète
+
+Le dépôt fournit un préparateur d’archive qui n’effectue aucun téléchargement et n’exécute aucun fichier importé :
+
+```powershell
+npm run prepare:native:archive -- "C:\chemin\vers\libimobiledevice-win-x64.zip"
+npm run verify:native
+```
+
+Le script extrait l’archive dans un dossier temporaire, recherche un dossier contenant les six exécutables requis et au moins une DLL, copie uniquement les `.exe`, `.dll` et avis de licence, puis crée `NOVAUNLOCK-NATIVE-MANIFEST.json` avec les empreintes SHA-256 locales. Si un élément manque, la copie est refusée.
+
+Le script ne transforme pas une archive en binaires : l’archive ZIP doit déjà contenir de vrais fichiers Windows x64 provenant d’une source validée. Aucun fichier factice n’est accepté comme solution de fonctionnement.
 
 `package`, `package:win` et `package:win:portable` exécutent automatiquement `verify:native`. Ils s'arrêtent si un exécutable requis ou une DLL manque, plutôt que de livrer un installateur USB inutilisable. Les fichiers `.exe`, `.dll` et archives restent ignorés par Git.
 
