@@ -5,6 +5,7 @@
 
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
+import { appendAudit, discoverBackups, downloadFirmware, evaluatePreflight, type MasterTask } from "./master-service";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -103,6 +104,14 @@ ipcMain.handle("usb:check-jailbreak", async () => {
 ipcMain.handle("usb:install-libimobiledevice", async () => {
   const { installLibimobiledevice } = require(path.join(__dirname, "./usb-scanner"));
   return await installLibimobiledevice();
+});
+
+ipcMain.handle("master:backups", async () => discoverBackups());
+ipcMain.handle("master:download-firmware", async (_, url: string, buildId: string) => downloadFirmware(url, buildId));
+ipcMain.handle("master:preflight", async (_, task: MasterTask, device) => evaluatePreflight(task, device));
+ipcMain.handle("master:audit", async (_, task: MasterTask, deviceId: string, event: string) => {
+  appendAudit(task, deviceId, event);
+  return { success: true };
 });
 
 // App lifecycle

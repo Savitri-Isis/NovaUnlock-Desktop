@@ -3,6 +3,7 @@ import { useDeviceStore } from "../store/device-store";
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: "D" },
+  { path: "/master", label: "Maître", icon: "M" },
   { path: "/connect", label: "Connecter", icon: "C" },
   { path: "/dfu", label: "DFU Mode", icon: "DF" },
   { path: "/recovery", label: "Recovery", icon: "R" },

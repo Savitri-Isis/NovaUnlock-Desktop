@@ -56,6 +56,7 @@ export interface FirmwareInfo {
   filesize: string;
   released: string;
   signed: boolean;
+  localPath?: string;
 }
 
 export interface LogEntry {

@@ -30,7 +30,8 @@ export default function Firmware() {
     if (!confirmed) return;
 
     setSelectedFirmware(fw);
-    await FirmwareManager.downloadFirmware(fw);
+    const localPath = await FirmwareManager.downloadFirmware(fw);
+    if (localPath) setSelectedFirmware({ ...fw, localPath });
   };
 
   const handleFlash = async () => {
@@ -50,9 +51,9 @@ export default function Firmware() {
 
     const mode = connection.currentMode;
     if (mode === "dfu") {
-      await DFUClient.flashFirmware(selectedFirmware.url);
+      await DFUClient.flashFirmware(selectedFirmware.localPath || selectedFirmware.url);
     } else if (mode === "recovery") {
-      await RecoveryClient.flashFromRecovery(selectedFirmware.url);
+      await RecoveryClient.flashFromRecovery(selectedFirmware.localPath || selectedFirmware.url);
     } else {
       alert("L'appareil doit être en mode DFU ou Recovery pour flasher.");
     }

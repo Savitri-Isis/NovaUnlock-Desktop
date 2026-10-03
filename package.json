@@ -7,7 +7,7 @@
     "dev": "concurrently \"vite\" \"tsc -w -p electron/tsconfig.json\"",
     "dev:electron": "concurrently \"vite\" \"tsc -w -p electron/tsconfig.json\" \"wait-on http://localhost:5173 && electron .\"",
     "build:frontend": "vite build",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "tsc -p electron/tsconfig.json && tsc -p electron/preload/tsconfig.json",
     "build:all": "npm run build:frontend && npm run build:electron",
     "package": "npm run build:all && electron-builder",
     "package:win": "npm run build:all && electron-builder --win",
@@ -63,7 +63,7 @@
     "zustand": "^4.5.0",
     "axios": "^1.6.7",
     "node-hid": "^2.1.2",
-    "node-usb": "^2.11.0",
+    "usb": "^2.15.0",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {

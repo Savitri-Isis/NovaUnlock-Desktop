@@ -49,6 +49,12 @@ export type USBChannel = {
   getActivationLockStatus: () => Promise<{ locked: boolean; account: string | null }>;
   checkJailbreakStatus: () => Promise<boolean>;
   installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
+  listBackups: () => Promise<Array<{ path: string; name: string; productType: string; iosVersion: string; encrypted: boolean; sizeMb: number; modifiedAt: string }>>;
+  downloadFirmware: (url: string, buildId: string) => Promise<string>;
+  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => Promise<{
+    task: string; ok: boolean; dryRun: true; blockers: string[]; warnings: string[]; steps: string[]; activationLockNotice: string; backupCount: number; diskFreeGb: number;
+  }>;
+  appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 };
 
 contextBridge.exposeInMainWorld("novaunlock", {
@@ -84,7 +90,11 @@ contextBridge.exposeInMainWorld("novaunlock", {
 
   installLibimobiledevice: (): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke("usb:install-libimobiledevice"),
+  listBackups: () => ipcRenderer.invoke("master:backups"),
+  downloadFirmware: (url: string, buildId: string) => ipcRenderer.invoke("master:download-firmware", url, buildId),
+  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => ipcRenderer.invoke("master:preflight", task, device),
+  appendAudit: (task: string, deviceId: string, event: string) => ipcRenderer.invoke("master:audit", task, deviceId, event),
 });
 
 // Type declarations pour le renderer
-export type ElectronAPI = typeof window["novaunlock"];
+export type ElectronAPI = USBChannel;

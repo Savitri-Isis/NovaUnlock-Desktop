@@ -151,7 +151,7 @@ async function scanWithNodeHid(): Promise<USBDevice | null> {
 
 async function scanWithNodeUSB(): Promise<USBDevice | null> {
   try {
-    const usb = require("node-usb");
+    const usb = require("usb");
     const devices = usb.getDeviceList();
     const appleDevice = devices.find((d: any) => d.deviceDescriptor.idVendor === APPLE_VENDOR_ID);
 
@@ -457,7 +457,7 @@ export async function installLibimobiledevice(): Promise<{ success: boolean; mes
     response.data.pipe(writer);
 
     await new Promise((resolve, reject) => {
-      writer.on("finish", resolve);
+      writer.on("finish", () => resolve(undefined));
       writer.on("error", reject);
     });
 

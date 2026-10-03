@@ -1,6 +1,8 @@
 # NovaUnlock Desktop
 
-Outil de déverrouillage iOS via USB pour **Windows**. Permet de gérer les modes DFU, Recovery, le flash de firmware et la lecture d'informations appareil.
+Application maîtresse NovaUnlock pour **Windows**. Elle orchestre les fonctions prévues par `NovaUnlock-App` et le cœur `NovaUnlock` : diagnostic, sauvegardes, prévols, guidage DFU/Recovery, restauration de firmwares signés et parcours de remise à zéro autorisée.
+
+Les opérations sensibles sont précédées d'un prévol et d'un audit local haché. Le mode maître reste en prévisualisation tant que les garde-fous ne sont pas satisfaits. Le verrouillage d'activation Apple n'est jamais contourné.
 
 ---
 
@@ -10,12 +12,13 @@ Outil de déverrouillage iOS via USB pour **Windows**. Permet de gérer les mode
 NovaUnlock Desktop
 ├── electron/              # Processus principal Electron (Node.js)
 │   ├── src/
-│   │   ├── main.ts        # Point d'entrée Electron
-│   │   └── usb-scanner.ts # Module USB Windows (node-hid, node-usb, libimobiledevice)
+│   │   ├── main.ts        # Point d'entrée Electron et IPC maître
+│   │   ├── master-service.ts # Prévols, sauvegardes, compatibilité et audit
+│   │   └── usb-scanner.ts # Module USB Windows (node-hid, usb, libimobiledevice)
 │   └── preload/
 │       └── preload.ts     # Bridge sécurisé IPC → Renderer
 ├── src/                   # Frontend React (Vite)
-│   ├── renderer/          # Composants d'écran
+│   ├── renderer/          # Composants d'écran, dont l'orchestrateur Master
 │   ├── components/        # Composants partagés (Sidebar)
 │   ├── store/             # Store Zustand
 │   ├── lib/usb/           # Clients USB (DFUClient, RecoveryClient, FirmwareManager)
@@ -92,7 +95,7 @@ Les fichiers de sortie seront dans le dossier `release/`.
 | Module | Description |
 |--------|-------------|
 | `node-hid` | Détection HID bas niveau (USB HID devices) |
-| `node-usb` | Communication USB bulk (DFU, Recovery, Normal) |
+| `usb` | Communication USB bulk (DFU, Recovery, Normal) |
 | `libimobiledevice` | Protocole Apple complet (iDevice API, AFC, Plist) |
 | `irecovery` | Envoi de commandes iBoot/DFU/Recovery |
 | `idevicerestore` | Flash firmware complet |

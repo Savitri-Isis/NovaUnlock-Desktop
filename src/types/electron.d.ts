@@ -46,6 +46,12 @@ export interface NovaUnlockAPI {
   getActivationLockStatus: () => Promise<{ locked: boolean; account: string | null }>;
   checkJailbreakStatus: () => Promise<boolean>;
   installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
+  listBackups: () => Promise<Array<{ path: string; name: string; productType: string; iosVersion: string; encrypted: boolean; sizeMb: number; modifiedAt: string }>>;
+  downloadFirmware: (url: string, buildId: string) => Promise<string>;
+  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => Promise<{
+    task: string; ok: boolean; dryRun: true; blockers: string[]; warnings: string[]; steps: string[]; activationLockNotice: string; backupCount: number; diskFreeGb: number;
+  }>;
+  appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 }
 
 declare global {

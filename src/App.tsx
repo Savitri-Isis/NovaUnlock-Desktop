@@ -6,6 +6,7 @@ import Recovery from "./renderer/Recovery";
 import Firmware from "./renderer/Firmware";
 import DeviceInfo from "./renderer/DeviceInfo";
 import Settings from "./renderer/Settings";
+import Master from "./renderer/Master";
 import Sidebar from "./components/Sidebar";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <main className="flex-1 overflow-hidden">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/master" element={<Master />} />
             <Route path="/connect" element={<DeviceConnect />} />
             <Route path="/dfu" element={<DFU />} />
             <Route path="/recovery" element={<Recovery />} />

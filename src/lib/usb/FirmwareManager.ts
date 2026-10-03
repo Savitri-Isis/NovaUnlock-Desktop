@@ -72,10 +72,10 @@ export class FirmwareManager {
     try {
       // Sur desktop, on appelle le backend Electron pour le téléchargement
       if (window.novaunlock) {
-        store.addLog({
-          message: "Téléchargement via Electron backend...",
-          type: "info",
-        });
+        const localPath = await window.novaunlock.downloadFirmware(firmware.url, firmware.buildid);
+        store.setFirmwareDownloadProgress({ isDownloading: false, progress: 100, speed: "", downloadedSize: firmware.filesize });
+        store.addLog({ message: `Firmware iOS ${firmware.version} enregistré dans ${localPath}`, type: "success" });
+        return localPath;
       }
 
       // Fallback : download direct via fetch
@@ -113,7 +113,7 @@ export class FirmwareManager {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${deviceIdentifier}_${firmware.buildid}.ipsw`;
+      a.download = `NovaUnlock_${firmware.buildid}.ipsw`;
       a.click();
       window.URL.revokeObjectURL(url);
 
