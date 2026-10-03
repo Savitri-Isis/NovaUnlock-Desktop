@@ -24,10 +24,10 @@ export class FirmwareManager {
     const store = useDeviceStore.getState();
 
     try {
-      const response = await fetch(`${IPSW_API}/device/${deviceIdentifier}`);
+      const response = await fetch(`${IPSW_API}/device/${encodeURIComponent(deviceIdentifier.trim())}`);
       const data = await response.json();
 
-      const firmwares: FirmwareInfo[] = data.firmwares
+      const firmwares: FirmwareInfo[] = (data.firmwares || [])
         .filter((fw: any) => fw.signed)
         .map((fw: any) => ({
           version: fw.version,
@@ -56,7 +56,7 @@ export class FirmwareManager {
 
   /**
    * Télécharger un firmware.
-   * Sur desktop, utilise node-fetch pour télécharger dans le dossier Downloads.
+   * Sur desktop, utilise le backend Electron pour télécharger dans le dossier Downloads.
    */
   static async downloadFirmware(firmware: FirmwareInfo): Promise<string | null> {
     const store = useDeviceStore.getState();
@@ -73,8 +73,16 @@ export class FirmwareManager {
       // Sur desktop, on appelle le backend Electron pour le téléchargement
       if (window.novaunlock) {
         const localPath = await window.novaunlock.downloadFirmware(firmware.url, firmware.buildid);
-        store.setFirmwareDownloadProgress({ isDownloading: false, progress: 100, speed: "", downloadedSize: firmware.filesize });
-        store.addLog({ message: `Firmware iOS ${firmware.version} enregistré dans ${localPath}`, type: "success" });
+        store.setFirmwareDownloadProgress({
+          isDownloading: false,
+          progress: 100,
+          speed: "",
+          downloadedSize: firmware.filesize,
+        });
+        store.addLog({
+          message: `Firmware iOS ${firmware.version} enregistré dans ${localPath}`,
+          type: "success",
+        });
         return localPath;
       }
 
@@ -86,14 +94,18 @@ export class FirmwareManager {
       if (!reader) return null;
 
       let downloaded = 0;
-      const total = parseInt(totalSize || "0");
-      const chunks: Uint8Array[] = [];
+      const total = parseInt(totalSize || "0", 10);
+      const chunks: BlobPart[] = [];
 
-      while (true) {
+      let reading = true;
+      while (reading) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          reading = false;
+          break;
+        }
 
-        chunks.push(value);
+        chunks.push(new Uint8Array(value));
         downloaded += value.length;
 
         const progress = total > 0 ? Math.round((downloaded / total) * 100) : 0;
@@ -132,7 +144,13 @@ export class FirmwareManager {
 
       return a.download;
     } catch (error: any) {
-      store.setFirmwareDownloadProgress({ isDownloading: false, progress: 0, speed: "", totalSize: "", downloadedSize: "" });
+      store.setFirmwareDownloadProgress({
+        isDownloading: false,
+        progress: 0,
+        speed: "",
+        totalSize: "",
+        downloadedSize: "",
+      });
       store.addLog({
         message: `Erreur téléchargement: ${error.message}`,
         type: "error",

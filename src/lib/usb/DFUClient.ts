@@ -81,7 +81,7 @@ export class DFUClient {
     try {
       const result = await window.novaunlock.flashFirmware(filePath);
       store.setDfuProgress({
-        isFlashing: result.success,
+        isFlashing: false,
         progress: result.progress,
         stage: result.stage,
         speed: result.speed,

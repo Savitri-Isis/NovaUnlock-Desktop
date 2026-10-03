@@ -25,6 +25,7 @@ export interface DeviceDetails {
   storageUsed: string | null;
   storageTotal: string | null;
   jailbreakStatus: boolean;
+  jailbreakState?: "yes" | "no" | "unknown" | "not-checked";
   activationLockStatus: string | null;
   connectionType: string | null;
   ecid: string | null;
@@ -34,8 +35,17 @@ export interface DeviceDetails {
   basebandVersion: string | null;
 }
 
+export interface ActivationLockStatus {
+  state?: "locked" | "unlocked" | "unknown" | "unavailable";
+  locked: boolean | null;
+  account: string | null;
+  message?: string;
+}
+
 export interface NovaUnlockAPI {
   scanDevices: () => Promise<DeviceInfo | null>;
+  scanAllDevices?: () => Promise<DeviceInfo[]>;
+  checkLibimobiledevice?: () => Promise<boolean>;
   connectDevice: (deviceId: number) => Promise<boolean>;
   disconnectDevice: (deviceId: number) => Promise<boolean>;
   sendDFUCommand: (command: string, args: string) => Promise<{ success: boolean; response?: string }>;
@@ -43,13 +53,39 @@ export interface NovaUnlockAPI {
   flashFirmware: (filePath: string) => Promise<{ success: boolean; progress: number; stage: string; speed: string }>;
   getDeviceInfo: () => Promise<DeviceDetails | null>;
   getECID: () => Promise<string | null>;
-  getActivationLockStatus: () => Promise<{ locked: boolean; account: string | null }>;
+  getActivationLockStatus: () => Promise<ActivationLockStatus>;
   checkJailbreakStatus: () => Promise<boolean>;
   installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
-  listBackups: () => Promise<Array<{ path: string; name: string; productType: string; iosVersion: string; encrypted: boolean; sizeMb: number; modifiedAt: string }>>;
+  listBackups: () => Promise<
+    Array<{
+      path: string;
+      name: string;
+      productType: string;
+      iosVersion: string;
+      encrypted: boolean;
+      sizeMb: number;
+      modifiedAt: string;
+    }>
+  >;
   downloadFirmware: (url: string, buildId: string) => Promise<string>;
-  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => Promise<{
-    task: string; ok: boolean; dryRun: true; blockers: string[]; warnings: string[]; steps: string[]; activationLockNotice: string; backupCount: number; diskFreeGb: number;
+  preflight: (
+    task: string,
+    device: {
+      modelIdentifier?: string | null;
+      serial?: string | null;
+      mode?: string;
+      activationLockStatus?: string | null;
+    }
+  ) => Promise<{
+    task: string;
+    ok: boolean;
+    dryRun: true;
+    blockers: string[];
+    warnings: string[];
+    steps: string[];
+    activationLockNotice: string;
+    backupCount: number;
+    diskFreeGb: number;
   }>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 }

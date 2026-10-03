@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useDeviceStore } from "../store/device-store";
 import { DFUClient } from "../lib/usb/DFUClient";
 

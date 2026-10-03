@@ -13,7 +13,6 @@ export default function Firmware() {
   const downloadProgress = useDeviceStore((s) => s.firmwareDownloadProgress);
   const connection = useDeviceStore((s) => s.connection);
   const setSelectedFirmware = useDeviceStore((s) => s.setSelectedFirmware);
-  const setFirmwareDownloadProgress = useDeviceStore((s) => s.setFirmwareDownloadProgress);
 
   const handleSearch = async () => {
     if (!deviceIdentifier.trim()) {
