@@ -45,6 +45,8 @@ Si vous ne disposez pas déjà d’un paquet natif de confiance, vous n’avez p
 
 Le script ne télécharge pas d’exécutables `libimobiledevice` précompilés et ne lance aucune commande sur un appareil. Il place le payload local dans `native/libimobiledevice` et les journaux d’échec dans `.native-build/logs`; les binaires natifs et l’avis généré sont ignorés par Git par défaut. Les sources sont compilées sur le PC Windows et ne sont pas vérifiées matériellement dans le sandbox.
 
+**Erreur GCC `argument to '-O'` dans `idevicerestore`** : la version amont 1.0.0 concatène par erreur `-O2` et `-DWIN32`. Le constructeur applique désormais un correctif local à `configure.ac`, après vérification du commit et avant génération des fichiers de compilation. Récupérez les fichiers du dépôt à jour (y compris `scripts/patches`), puis relancez `Construire-outils-libimobiledevice-Windows.cmd`. Aucune suppression manuelle du dossier temporaire n’est nécessaire. Les journaux de compilation affichent les commandes complètes (`make V=1`).
+
 Si MSYS2 est installé ailleurs que `C:\msys64`, définissez `MSYS2_ROOT` sur son dossier avant de lancer le fichier `.cmd`.
 
 ### Créer l’installateur sans saisir de commandes (Windows)

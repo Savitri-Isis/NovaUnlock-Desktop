@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a local Windows x64 libimobiledevice payload from pinned upstream sources.
-# Run only from an MSYS2 UCRT64 shell (normally via build-native-windows.cmd).
+# Run only from an MSYS2 UCRT64 shell (normally via Construire-outils-libimobiledevice-Windows.cmd).
 set -Eeuo pipefail
 
 fail() {
@@ -107,12 +107,22 @@ build_component() {
     configure_args+=(--without-readline)
   fi
 
+  # The pinned 1.0.0 release joins -O2 and -DWIN32 without a space.
+  # Patch only verified sources, before autogen generates configure/Makefiles.
+  if [[ "$project" == "idevicerestore" ]]; then
+    local source_patch="$SCRIPT_DIR/patches/idevicerestore-1.0.0-win32-cflags.patch"
+    if ! git -C "$source_dir" apply --check "$source_patch" ||
+       ! git -C "$source_dir" apply "$source_patch"; then
+      fail "Application du correctif CFLAGS Windows de $project échouée."
+    fi
+  fi
+
   printf '\nCompilation de %s...\n' "$project"
   if ! (cd "$source_dir" && ./autogen.sh "${configure_args[@]}") >"$configure_log" 2>&1; then
     tail -n 80 "$configure_log" >&2 || true
     fail "Configuration de $project échouée."
   fi
-  if ! (cd "$source_dir" && make -j"$jobs") >"$build_log" 2>&1; then
+  if ! (cd "$source_dir" && make V=1 -j"$jobs") >"$build_log" 2>&1; then
     tail -n 80 "$build_log" >&2 || true
     fail "Compilation de $project échouée."
   fi
@@ -211,7 +221,10 @@ NovaUnlock — native Windows tools
 
 This payload was built locally from release sources in the official
 https://github.com/libimobiledevice organization. Source commit IDs are pinned
-in scripts/native-sources.lock. The tools and bundled libraries retain their
+in scripts/native-sources.lock. A local patch to idevicerestore 1.0.0 adds
+the missing space between -O2 and -DWIN32 in configure.ac (see
+scripts/patches/idevicerestore-1.0.0-win32-cflags.patch).
+The tools and bundled libraries retain their
 respective licenses; see the notices and license texts below.
 
 NOTICE_HEADER
