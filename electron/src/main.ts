@@ -181,23 +181,32 @@ ipcMain.handle("usb:check-jailbreak", async () => {
   return await checkJailbreakStatus();
 });
 
+let nativeImportInProgress = false;
 ipcMain.handle("usb:install-libimobiledevice", async () => {
-  const selected = await dialog.showOpenDialog({
-    title: "Sélectionnez le dossier libimobiledevice Windows x64 extrait",
-    properties: ["openDirectory"],
-    buttonLabel: "Importer les binaires",
-  });
+  // Prevent duplicate folder dialogs/imports, including navigation between screens.
+  if (nativeImportInProgress) throw new Error("Une configuration des outils est déjà en cours.");
+  nativeImportInProgress = true;
+  try {
+    const selected = await dialog.showOpenDialog({
+      title: "Choisissez un paquet libimobiledevice Windows x64 extrait et de confiance",
+      properties: ["openDirectory"],
+      buttonLabel: "Configurer les outils",
+    });
 
-  if (selected.canceled || selected.filePaths.length === 0) {
-    return {
-      success: false,
-      message: "Importation annulée : aucun dossier n'a été sélectionné.",
-      status: rendererNativeStatus(),
-    };
+    if (selected.canceled || selected.filePaths.length === 0) {
+      return {
+        success: false,
+        canceled: true,
+        message: "Importation annulée : aucun dossier n'a été sélectionné.",
+        status: rendererNativeStatus(),
+      };
+    }
+
+    const imported = importNativePayload(selected.filePaths[0]);
+    return { ...imported, status: rendererNativeStatus() };
+  } finally {
+    nativeImportInProgress = false;
   }
-
-  const imported = importNativePayload(selected.filePaths[0]);
-  return { ...imported, status: rendererNativeStatus() };
 });
 
 ipcMain.handle("master:backups", async () => discoverBackups());

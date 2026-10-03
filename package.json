@@ -15,7 +15,8 @@
     "package:win": "npm run verify:native && npm run build:all && electron-builder --win",
     "package:win:portable": "npm run verify:native && npm run build:all && electron-builder --win portable",
     "test": "vitest run",
-    "lint": "eslint src electron --ext .ts,.tsx"
+    "lint": "eslint src electron --ext .ts,.tsx",
+    "package:win:assisted": "node scripts/package-windows.cjs"
   },
   "build": {
     "appId": "com.novaunlock.desktop",
@@ -42,18 +43,15 @@
           ]
         }
       ],
-      "icon": "public/assets/novaunlock-icon.png",
-      "artifactName": "NovaUnlock-Setup-${version}-Setup.${ext}"
+      "icon": "public/assets/novaunlock-icon.png"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "public/assets/novaunlock-icon.png",
-      "uninstallerIcon": "public/assets/novaunlock-icon.png",
-      "installerHeaderIcon": "public/assets/novaunlock-icon.png",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "NovaUnlock"
+      "shortcutName": "NovaUnlock",
+      "artifactName": "NovaUnlock-Setup-${version}-${arch}.${ext}"
     },
     "extraResources": [
       {
@@ -63,7 +61,10 @@
           "**/*"
         ]
       }
-    ]
+    ],
+    "portable": {
+      "artifactName": "NovaUnlock-Portable-${version}-${arch}.${ext}"
+    }
   },
   "dependencies": {
     "axios": "^1.6.7",
@@ -99,5 +100,8 @@
     "vite": "^5.0.12",
     "vitest": "^2.1.9",
     "wait-on": "^7.2.0"
+  },
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   }
 }

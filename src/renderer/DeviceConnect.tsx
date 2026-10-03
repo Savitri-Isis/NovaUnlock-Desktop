@@ -1,29 +1,13 @@
-import { useState } from "react";
 import { useDeviceStore } from "../store/device-store";
 import { DeviceDetector } from "../lib/usb/DeviceDetector";
+import NativeSetup from "../components/NativeSetup";
 
 export default function DeviceConnect() {
-  const [isInstallingLib, setIsInstallingLib] = useState(false);
   const connection = useDeviceStore((s) => s.connection);
   const deviceInfo = useDeviceStore((s) => s.deviceInfo);
-  const isLibimobiledeviceInstalled = useDeviceStore((s) => s.isLibimobiledeviceInstalled);
-  const setLibimobiledeviceInstalled = useDeviceStore((s) => s.setLibimobiledeviceInstalled);
 
   const handleScan = async () => {
     await DeviceDetector.scan();
-  };
-
-  const handleInstallLib = async () => {
-    setIsInstallingLib(true);
-    try {
-      const result = await window.novaunlock.installLibimobiledevice();
-      setLibimobiledeviceInstalled(result.status.diagnosticsReady);
-      alert(result.message);
-    } catch (error: any) {
-      alert(`Erreur: ${error.message}`);
-    } finally {
-      setIsInstallingLib(false);
-    }
   };
 
   const handleDisconnect = async () => {
@@ -94,26 +78,7 @@ export default function DeviceConnect() {
         </div>
       </div>
 
-      {/* libimobiledevice */}
-      <div className="bg-surface rounded-2xl p-4 border border-border mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">libimobiledevice</h3>
-            <p className="text-xs text-muted">
-              {isLibimobiledeviceInstalled
-                ? "Diagnostic disponible — vérifiez les capacités dans Maître"
-                : "Importez le paquet Windows x64 officiel pour les opérations USB"}
-            </p>
-          </div>
-          <button
-            onClick={handleInstallLib}
-            disabled={isInstallingLib}
-            className="px-4 py-2 rounded-lg bg-accent text-white text-xs font-semibold disabled:opacity-50"
-          >
-            {isInstallingLib ? "Importation..." : "Importer / mettre à jour"}
-          </button>
-        </div>
-      </div>
+      <NativeSetup />
 
       {/* Actions */}
       <div className="flex gap-3">

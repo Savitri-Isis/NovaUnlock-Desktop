@@ -1,29 +1,10 @@
-import { useEffect, useState } from "react";
 import { useDeviceStore } from "../store/device-store";
-import type { NativeToolStatus } from "../types/electron";
+import NativeSetup from "../components/NativeSetup";
 
 export default function Settings() {
-  const isLibimobiledeviceInstalled = useDeviceStore((s) => s.isLibimobiledeviceInstalled);
   const connection = useDeviceStore((s) => s.connection);
   const logs = useDeviceStore((s) => s.logs);
   const clearLogs = useDeviceStore((s) => s.clearLogs);
-  const [nativeStatus, setNativeStatus] = useState<NativeToolStatus | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!window.novaunlock.getNativeToolStatus) return;
-    void window.novaunlock
-      .getNativeToolStatus()
-      .then((status) => {
-        if (active) setNativeStatus(status);
-      })
-      .catch(() => {
-        if (active) setNativeStatus(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -55,46 +36,15 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* libimobiledevice */}
+      <NativeSetup />
+
       <div className="bg-surface rounded-2xl p-5 border border-border mb-6">
-        <h3 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
-          libimobiledevice
-        </h3>
-        <div className="flex justify-between items-center">
-          <div>
-            <p className="text-sm text-foreground">Statut d'installation</p>
-            <p className="text-xs text-muted">Requis pour les opérations USB avancées</p>
-          </div>
-          <span
-            className="px-3 py-1 rounded-lg text-xs font-semibold"
-            style={{
-              backgroundColor: isLibimobiledeviceInstalled ? "#00E67620" : "#8B8B9E20",
-              color: isLibimobiledeviceInstalled ? "#00E676" : "#8B8B9E",
-            }}
-          >
-            {isLibimobiledeviceInstalled ? "Installé" : "Non installé"}
-          </span>
-        </div>
-        <div className="mt-3 p-3 bg-background rounded-lg space-y-1">
-          <p className="text-xs text-muted">
-            Source : <span className="font-mono">{nativeStatus?.source || "non vérifiée"}</span>
-          </p>
-          <p className="text-xs text-muted">
-            Binaires requis : ideviceinfo, idevice_id, idevicebackup2, idevicerestore, irecovery, ideviceactivation
-          </p>
-          {nativeStatus && (
-            <>
-              <p className="text-xs text-muted">
-                Capacités : diagnostic {nativeStatus.diagnosticsReady ? "✓" : "✗"} · sauvegarde {nativeStatus.backupReady ? "✓" : "✗"} · restauration {nativeStatus.restoreReady ? "✓" : "✗"}
-              </p>
-              {nativeStatus.missing.length > 0 && (
-                <p className="text-xs text-warning break-words">
-                  Manquants : {nativeStatus.missing.join(", ")}
-                </p>
-              )}
-            </>
-          )}
-        </div>
+        <h3 className="text-sm font-semibold text-foreground mb-2">Créer un installateur Windows</h3>
+        <p className="text-sm text-muted">
+          Depuis le dossier des sources, double-cliquez sur <code className="text-foreground">Creer-installateur-Windows.cmd</code>.
+          Cet assistant séparé installe les dépendances, prépare les outils et génère les fichiers dans <code>release</code>.
+          Node.js est requis sur le PC de compilation, mais pas pour utiliser NovaUnlock déjà installé.
+        </p>
       </div>
 
       {/* USB Preferences */}

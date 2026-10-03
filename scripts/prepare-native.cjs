@@ -9,19 +9,12 @@ const path = require("path");
 const repoRoot = path.resolve(__dirname, "..");
 const destination = path.join(repoRoot, "native", "libimobiledevice");
 const sourceArg = process.argv[2] || process.env.NOVAUNLOCK_NATIVE_DIR;
-const required = [
-  "idevice_id.exe",
-  "ideviceinfo.exe",
-  "ideviceactivation.exe",
-  "idevicebackup2.exe",
-  "idevicerestore.exe",
-  "irecovery.exe",
-];
+const { required, verifyNative } = require("./verify-native.cjs");
 
 function usage(message) {
   if (message) console.error(`\nErreur : ${message}`);
-  console.error("\nUsage : NOVAUNLOCK_NATIVE_DIR=C:\\chemin\\vers\\payload npm run prepare:native");
-  console.error("   ou : npm run prepare:native -- C:\\chemin\\vers\\payload");
+  console.error('\nUsage : npm run prepare:native -- "C:\\chemin\\vers\\payload"');
+  console.error("   ou : double-cliquez sur Creer-installateur-Windows.cmd");
   process.exitCode = 1;
 }
 
@@ -47,7 +40,10 @@ function directories(root, max = 2000) {
 function score(dir) {
   try {
     const names = new Set(fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name.toLowerCase()));
-    return required.filter((name) => names.has(name)).length;
+    // Two arbitrary utilities are not a usable diagnostic payload.
+    if (!names.has("ideviceinfo.exe") || !names.has("idevice_id.exe")) return -1;
+    const dllBonus = [...names].some((name) => name.endsWith(".dll")) ? 0.5 : 0;
+    return required.filter((name) => names.has(name)).length + dllBonus;
   } catch {
     return -1;
   }
@@ -76,6 +72,18 @@ for (const dir of directories(sourceRoot)) {
 
 if (!payload || bestScore < 2) {
   usage("le dossier ne contient pas ideviceinfo.exe et idevice_id.exe.");
+  return;
+}
+
+// The guided build validates the SOURCE before touching the current payload.
+// Otherwise stale destination files could hide an incomplete replacement archive.
+if (process.argv.includes("--require-complete") && !verifyNative(payload)) {
+  process.exitCode = 1;
+  return;
+}
+
+if (path.resolve(payload) === path.resolve(destination)) {
+  process.exitCode = verifyNative(destination) ? 0 : 1;
   return;
 }
 
