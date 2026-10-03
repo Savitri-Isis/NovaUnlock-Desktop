@@ -28,6 +28,7 @@ NovaUnlock Desktop
 ## Prérequis
 
 - Windows 10/11 x64
+- Pour l’installation et l’utilisation de l’application déjà construite, voir [`INSTALLATION_WINDOWS.md`](INSTALLATION_WINDOWS.md).
 - Pour compiler : Node.js **x64**, branche **22 à partir de 22.22.2** ou **24 à partir de 24.15.0** (versions compatibles avec les dépendances verrouillées ; Node 18 n’est plus suffisant). Node.js n’est pas nécessaire pour utiliser l’application déjà installée.
 - Un câble USB compatible
 - Apple Devices ou iTunes / Apple Mobile Device USB Driver pour l'appairage en mode Normal
