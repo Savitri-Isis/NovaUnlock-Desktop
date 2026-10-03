@@ -1,10 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDeviceStore, type FirmwareInfo } from "../store/device-store";
 import { FirmwareManager } from "../lib/usb/FirmwareManager";
-import { DFUClient } from "../lib/usb/DFUClient";
-import { RecoveryClient } from "../lib/usb/RecoveryClient";
 
 export default function Firmware() {
+  const navigate = useNavigate();
   const [deviceIdentifier, setDeviceIdentifier] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -33,7 +33,7 @@ export default function Firmware() {
     if (localPath) setSelectedFirmware({ ...fw, localPath });
   };
 
-  const handleFlash = async () => {
+  const handleFlash = () => {
     if (!selectedFirmware) {
       alert("Aucun firmware sélectionné.");
       return;
@@ -42,27 +42,26 @@ export default function Firmware() {
       alert("Connectez un appareil d'abord.");
       return;
     }
-
-    const confirmed = window.confirm(
-      `Flasher iOS ${selectedFirmware.version} ?\n\nL'opération est irréversible.`
-    );
-    if (!confirmed) return;
-
-    const mode = connection.currentMode;
-    if (mode === "dfu") {
-      await DFUClient.flashFirmware(selectedFirmware.localPath || selectedFirmware.url);
-    } else if (mode === "recovery") {
-      await RecoveryClient.flashFromRecovery(selectedFirmware.localPath || selectedFirmware.url);
-    } else {
-      alert("L'appareil doit être en mode DFU ou Recovery pour flasher.");
+    if (!selectedFirmware.localPath) {
+      alert("Téléchargez d'abord le firmware signé. Une URL distante ne peut pas être restaurée directement.");
+      return;
     }
+    if (connection.currentMode !== "dfu" && connection.currentMode !== "recovery") {
+      alert("Placez l'appareil en mode DFU ou Recovery avant de poursuivre.");
+      return;
+    }
+
+    // Le fichier sélectionné reste dans le store. La restauration elle-même est
+    // volontairement centralisée dans Maître, où le prévol final, l'Activation
+    // Lock, l'attestation et la confirmation écrite sont tous imposés côté main.
+    navigate("/master");
   };
 
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-foreground">Firmware Manager</h2>
-        <p className="text-sm text-muted">Gestion et flash de firmware iOS</p>
+        <p className="text-sm text-muted">Téléchargement d'IPSW signés avant restauration officielle</p>
       </div>
 
       <div className="mb-4">
@@ -165,7 +164,7 @@ export default function Firmware() {
             onClick={handleFlash}
             className="w-full py-3 rounded-xl bg-danger text-white font-semibold"
           >
-            Flasher le firmware
+            Continuer dans Maître pour restaurer
           </button>
         </div>
       )}

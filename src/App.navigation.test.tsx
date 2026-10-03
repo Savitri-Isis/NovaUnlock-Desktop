@@ -12,6 +12,20 @@ describe("Navigation React Router v7", () => {
 
     window.novaunlock = {
       scanDevices: vi.fn().mockResolvedValue(null),
+      scanAllDevices: vi.fn().mockResolvedValue([]),
+      checkLibimobiledevice: vi.fn().mockResolvedValue(false),
+      getNativeToolStatus: vi.fn().mockResolvedValue({
+        diagnosticsReady: false,
+        backupReady: false,
+        restoreReady: false,
+        activationCheckReady: false,
+        complete: false,
+        hasDlls: false,
+        searchRoots: [],
+        tools: {},
+        missing: [],
+        source: "none",
+      }),
       connectDevice: vi.fn().mockResolvedValue(false),
       disconnectDevice: vi.fn().mockResolvedValue(true),
       sendDFUCommand: vi.fn().mockResolvedValue({ success: true }),
@@ -26,20 +40,60 @@ describe("Navigation React Router v7", () => {
       getECID: vi.fn().mockResolvedValue(null),
       getActivationLockStatus: vi.fn().mockResolvedValue({ locked: false, account: null }),
       checkJailbreakStatus: vi.fn().mockResolvedValue(false),
-      installLibimobiledevice: vi.fn().mockResolvedValue({ success: true, message: "OK" }),
+      installLibimobiledevice: vi.fn().mockResolvedValue({
+        success: true,
+        message: "OK",
+        status: {
+          diagnosticsReady: true,
+          backupReady: true,
+          restoreReady: true,
+          activationCheckReady: true,
+          complete: true,
+          hasDlls: true,
+          searchRoots: [],
+          tools: {},
+          missing: [],
+          source: "bundled",
+        },
+      }),
       listBackups: vi.fn().mockResolvedValue([]),
+      selectFirmwareFile: vi.fn().mockResolvedValue(null),
       downloadFirmware: vi.fn().mockResolvedValue("/tmp/fw.ipsw"),
       preflight: vi.fn().mockResolvedValue({
         task: "inspect",
         ok: true,
         dryRun: true,
+        canExecute: true,
         blockers: [],
         warnings: [],
         steps: ["Inspection lecture seule"],
         activationLockNotice: "Activation Lock vérifié",
         backupCount: 1,
         diskFreeGb: 64,
+        requirements: {
+          ownerAttestation: false,
+          typedConfirmation: false,
+          backupPassword: false,
+          firmwareFile: false,
+          requiredMode: null,
+        },
       }),
+      executeMaster: vi.fn().mockResolvedValue({
+        id: "00000000-0000-4000-8000-000000000000",
+        task: "inspect",
+        state: "completed",
+        progress: 100,
+        stage: "Diagnostic terminé",
+        updatedAt: new Date().toISOString(),
+        result: {
+          success: true,
+          task: "inspect",
+          dryRun: false,
+          stage: "Diagnostic terminé",
+          message: "OK",
+        },
+      }),
+      getMasterOperationStatus: vi.fn().mockResolvedValue(null),
       appendAudit: vi.fn().mockResolvedValue({ success: true }),
     };
   });
@@ -179,5 +233,17 @@ describe("Navigation React Router v7", () => {
     expect(await screen.findByText(/PRÊT POUR VALIDATION/i)).toBeInTheDocument();
     expect(window.novaunlock.preflight).toHaveBeenCalledTimes(1);
     expect(window.novaunlock.appendAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("démarre une action maître distincte après un prévol réussi", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: /Maître/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Lancer le prévol sécurisé/i }));
+
+    const executeButton = await screen.findByRole("button", { name: /Exécuter le diagnostic lecture seule/i });
+    fireEvent.click(executeButton);
+
+    expect(window.novaunlock.executeMaster).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Diagnostic terminé")).toBeInTheDocument();
   });
 });

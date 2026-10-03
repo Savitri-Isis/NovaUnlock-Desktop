@@ -1,5 +1,6 @@
 import { useDeviceStore } from "../store/device-store";
 import { DFUClient } from "../lib/usb/DFUClient";
+import { DeviceDetector } from "../lib/usb/DeviceDetector";
 
 const INSTRUCTIONS = [
   { step: 1, title: "Éteignez l'appareil", desc: "Maintenez le bouton latéral jusqu'à l'extinction." },
@@ -13,14 +14,12 @@ export default function DFU() {
   const connection = useDeviceStore((s) => s.connection);
   const dfuProgress = useDeviceStore((s) => s.dfuProgress);
 
-  const handleEnterDFU = async () => {
-    if (!connection.isConnected) {
-      alert("Connectez un appareil d'abord.");
-      return;
-    }
-    const confirmed = window.confirm("Entrer en mode DFU ?\nSuivez les instructions ci-dessus.");
+  const handleDetectDFU = async () => {
+    const confirmed = window.confirm(
+      "Le mode DFU doit être déclenché physiquement avec les boutons de l'appareil.\n\nAvez-vous suivi les étapes ci-dessus ?"
+    );
     if (confirmed) {
-      await DFUClient.enterDFU();
+      await DeviceDetector.scan();
     }
   };
 
@@ -88,10 +87,10 @@ export default function DFU() {
       {/* Actions */}
       <div className="flex gap-3">
         <button
-          onClick={handleEnterDFU}
+          onClick={handleDetectDFU}
           className="flex-1 py-3 rounded-xl bg-primary text-white font-semibold"
         >
-          {isInDFU ? "Déjà en mode DFU" : "Entrer en mode DFU"}
+          {isInDFU ? "Mode DFU détecté" : "Détecter le mode DFU"}
         </button>
 
         {isInDFU && (

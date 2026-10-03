@@ -15,6 +15,9 @@ import {
   checkJailbreakState,
   sendDFUCommand,
   sendRecoveryCommand,
+  getNativeToolStatus,
+  importNativePayload,
+  NATIVE_TOOL_FILES,
 } from "../electron/src/usb-scanner";
 import {
   validateMasterTask,
@@ -26,6 +29,7 @@ import {
   evaluatePreflight,
   appendAudit,
 } from "../electron/src/master-service";
+import { validateMasterExecutionRequest } from "../electron/src/master-executor";
 
 describe("USB Scanner & Native Runner — Tests unitaires et sécurité", () => {
   it("identifie correctement le mode appareil via getModeFromProductId", () => {
@@ -50,6 +54,34 @@ describe("USB Scanner & Native Runner — Tests unitaires et sécurité", () => 
       appPath: "/workspace/NovaUnlock-Desktop",
     });
     expect(devPath).toBe(path.join("/workspace/NovaUnlock-Desktop", "native"));
+  });
+
+  it("importe un payload natif extrait sans exécuter de binaire et expose ses capacités", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "novaunlock-native-"));
+    const source = path.join(tmpRoot, "archive", "bin");
+    const destination = path.join(tmpRoot, "runtime-native");
+    fs.mkdirSync(source, { recursive: true });
+
+    for (const file of Object.values(NATIVE_TOOL_FILES)) {
+      fs.writeFileSync(path.join(source, file), "fake executable payload");
+    }
+    fs.writeFileSync(path.join(source, "libimobiledevice.dll"), "fake dll payload");
+    fs.writeFileSync(path.join(source, "LICENSE"), "license notice");
+
+    try {
+      expect(getNativeToolStatus([destination]).diagnosticsReady).toBe(false);
+      const imported = importNativePayload(path.join(tmpRoot, "archive"), destination);
+      expect(imported.success).toBe(true);
+      expect(imported.status.diagnosticsReady).toBe(true);
+      expect(imported.status.backupReady).toBe(true);
+      expect(imported.status.restoreReady).toBe(true);
+      expect(imported.status.activationCheckReady).toBe(true);
+      expect(imported.status.hasDlls).toBe(true);
+      expect(imported.importedFiles).toContain("idevicebackup2.exe");
+      expect(fs.existsSync(path.join(destination, "libimobiledevice", "LICENSE"))).toBe(true);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it("valide strictement les chemins IPSW (validateIpswPath)", () => {
@@ -235,6 +267,63 @@ describe("Master Service — Validation, Plist, Disque et Prévol", () => {
     });
     expect(ready.ok).toBe(true);
     expect(ready.blockers).toHaveLength(0);
+  });
+
+  it("bloque une restauration tant que l'Activation Lock n'est pas explicitement déverrouillé", () => {
+    const nativeStatus = {
+      diagnosticsReady: true,
+      backupReady: true,
+      restoreReady: true,
+      activationCheckReady: true,
+      complete: true,
+      hasDlls: true,
+      searchRoots: [],
+      tools: {
+        deviceId: true,
+        deviceInfo: true,
+        activation: true,
+        backup: true,
+        restore: true,
+        recovery: true,
+        enterRecovery: true,
+      },
+      missing: [],
+      source: "bundled" as const,
+    };
+
+    const unknownLock = evaluatePreflight(
+      "factory-reset",
+      { serial: "DNP123456789", mode: "dfu", activationLockStatus: "unknown" },
+      nativeStatus
+    );
+    expect(unknownLock.canExecute).toBe(false);
+    expect(unknownLock.blockers.join(" ")).toMatch(/Activation Lock/);
+
+    const unlocked = evaluatePreflight(
+      "factory-reset",
+      { serial: "DNP123456789", mode: "recovery", activationLockStatus: "unlocked" },
+      nativeStatus
+    );
+    expect(unlocked.canExecute).toBe(true);
+    expect(unlocked.requirements.typedConfirmation).toBe(true);
+    expect(unlocked.requirements.firmwareFile).toBe(true);
+  });
+
+  it("valide et borne les requêtes d'exécution maître sans accepter de tâche inconnue", () => {
+    const request = validateMasterExecutionRequest({
+      task: "backup",
+      device: { serial: "DNP123456789", mode: "normal" },
+      confirmation: { backupPassword: "un-secret-de-sauvegarde" },
+    });
+    expect(request.task).toBe("backup");
+    expect(request.confirmation?.backupPassword).toBe("un-secret-de-sauvegarde");
+    expect(() => validateMasterExecutionRequest({ task: "bypass", device: {} })).toThrow(/invalide/i);
+    expect(() =>
+      validateMasterExecutionRequest({
+        task: "backup",
+        device: { serial: "x\0y" },
+      })
+    ).toThrow(/invalide/i);
   });
 
   it("valide les entrées de appendAudit", () => {

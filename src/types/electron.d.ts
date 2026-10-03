@@ -1,6 +1,4 @@
-/**
- * NovaUnlock Desktop — Electron API Type Declarations
- */
+/** NovaUnlock Desktop — déclaration du bridge Electron isolé. */
 
 export interface DeviceInfo {
   deviceId: number;
@@ -42,11 +40,91 @@ export interface ActivationLockStatus {
   message?: string;
 }
 
+export interface NativeToolStatus {
+  diagnosticsReady: boolean;
+  backupReady: boolean;
+  restoreReady: boolean;
+  activationCheckReady: boolean;
+  complete: boolean;
+  hasDlls: boolean;
+  searchRoots: string[];
+  tools: Record<string, boolean>;
+  missing: string[];
+  source: "runtime" | "bundled" | "mixed" | "none";
+}
+
+export interface MasterPreflightResult {
+  task: string;
+  ok: boolean;
+  dryRun: true;
+  canExecute: boolean;
+  blockers: string[];
+  warnings: string[];
+  steps: string[];
+  activationLockNotice: string;
+  backupCount: number;
+  diskFreeGb: number;
+  requirements: {
+    ownerAttestation: boolean;
+    typedConfirmation: boolean;
+    backupPassword: boolean;
+    firmwareFile: boolean;
+    requiredMode: "normal" | "dfu-or-recovery" | null;
+  };
+  capabilities?: Pick<
+    NativeToolStatus,
+    "diagnosticsReady" | "backupReady" | "restoreReady" | "activationCheckReady"
+  >;
+}
+
+export interface MasterExecutionRequest {
+  task: string;
+  device: {
+    modelIdentifier?: string | null;
+    serial?: string | null;
+    mode?: string;
+    activationLockStatus?: string | null;
+  };
+  confirmation?: {
+    ownerAttested?: boolean;
+    typedConfirmation?: string;
+    backupPassword?: string;
+  };
+  firmwarePath?: string;
+}
+
+export interface MasterOperationStatus {
+  id: string;
+  task: string;
+  state: "queued" | "running" | "completed" | "failed" | "blocked";
+  progress: number | null;
+  stage: string;
+  speed?: string;
+  updatedAt: string;
+  result?: {
+    success: boolean;
+    task: string;
+    dryRun: false;
+    stage: string;
+    message: string;
+    backup?: { path: string; encrypted: boolean };
+    report?: {
+      serial: string | null;
+      model: string | null;
+      modelIdentifier: string | null;
+      iosVersion: string | null;
+      batteryLevel: number | null;
+      activationLockStatus: string | null;
+    };
+  };
+}
+
 export interface NovaUnlockAPI {
   scanDevices: () => Promise<DeviceInfo | null>;
   scanAllDevices?: () => Promise<DeviceInfo[]>;
   checkLibimobiledevice?: () => Promise<boolean>;
-  connectDevice: (deviceId: number) => Promise<boolean>;
+  getNativeToolStatus?: () => Promise<NativeToolStatus>;
+  connectDevice: (deviceId: number, connectionId?: string) => Promise<boolean>;
   disconnectDevice: (deviceId: number) => Promise<boolean>;
   sendDFUCommand: (command: string, args: string) => Promise<{ success: boolean; response?: string }>;
   sendRecoveryCommand: (command: string) => Promise<{ success: boolean; response?: string }>;
@@ -55,7 +133,7 @@ export interface NovaUnlockAPI {
   getECID: () => Promise<string | null>;
   getActivationLockStatus: () => Promise<ActivationLockStatus>;
   checkJailbreakStatus: () => Promise<boolean>;
-  installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
+  installLibimobiledevice: () => Promise<{ success: boolean; message: string; status: NativeToolStatus }>;
   listBackups: () => Promise<
     Array<{
       path: string;
@@ -67,26 +145,11 @@ export interface NovaUnlockAPI {
       modifiedAt: string;
     }>
   >;
+  selectFirmwareFile: () => Promise<string | null>;
   downloadFirmware: (url: string, buildId: string) => Promise<string>;
-  preflight: (
-    task: string,
-    device: {
-      modelIdentifier?: string | null;
-      serial?: string | null;
-      mode?: string;
-      activationLockStatus?: string | null;
-    }
-  ) => Promise<{
-    task: string;
-    ok: boolean;
-    dryRun: true;
-    blockers: string[];
-    warnings: string[];
-    steps: string[];
-    activationLockNotice: string;
-    backupCount: number;
-    diskFreeGb: number;
-  }>;
+  preflight: (task: string, device: MasterExecutionRequest["device"]) => Promise<MasterPreflightResult>;
+  executeMaster: (request: MasterExecutionRequest) => Promise<MasterOperationStatus>;
+  getMasterOperationStatus: (operationId: string) => Promise<MasterOperationStatus | null>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 }
 

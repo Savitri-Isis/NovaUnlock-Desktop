@@ -86,26 +86,36 @@ export class DeviceDetector {
           connectionId: device.connectionId,
         };
 
+        // La détection USB seule ne vaut pas une connexion appairée. On sélectionne
+        // l'endpoint détecté, puis connect() vérifie réellement libimobiledevice.
         store.setConnection({
-          isConnected: true,
+          isConnected: false,
           currentMode: device.mode,
-          lastConnectedAt: new Date(),
+          deviceId: device.deviceId,
+          connectionId: device.connectionId,
         });
-
         store.setDeviceInfo({
           serial: device.serialNumber,
           model: device.productName,
           connectionType: "usb",
         });
 
+        const connected = await this.connect(device.deviceId, device.connectionId, device.mode);
         store.addLog({
-          message: `Appareil détecté: ${device.deviceName} (${device.mode.toUpperCase()})`,
-          type: "success",
+          message: connected
+            ? `Appareil connecté: ${device.deviceName} (${device.mode.toUpperCase()})`
+            : `Appareil détecté mais non appairé: ${device.deviceName}. Déverrouillez-le et validez « Faire confiance ».`,
+          type: connected ? "success" : "warning",
         });
 
         return detected;
       } else {
-        store.setConnection({ isConnected: false, currentMode: "disconnected" });
+        store.setConnection({
+          isConnected: false,
+          currentMode: "disconnected",
+          deviceId: null,
+          connectionId: null,
+        });
         store.addLog({ message: "Aucun appareil Apple détecté", type: "warning" });
         return null;
       }
@@ -121,28 +131,47 @@ export class DeviceDetector {
   }
 
   /**
-   * Connecter à un appareil spécifique.
+   * Connecter à un appareil spécifique et conserver l'identité d'endpoint retenue.
    */
-  static async connect(deviceId: number): Promise<boolean> {
+  static async connect(
+    deviceId: number,
+    connectionId?: string,
+    mode?: DetectedDevice["mode"]
+  ): Promise<boolean> {
     const store = useDeviceStore.getState();
 
     try {
-      const success = await window.novaunlock.connectDevice(deviceId);
+      const success = await window.novaunlock.connectDevice(deviceId, connectionId);
       if (success) {
-        store.setConnection({ isConnected: true });
+        store.setConnection({
+          isConnected: true,
+          currentMode: mode || store.connection.currentMode,
+          deviceId,
+          connectionId: connectionId || null,
+          lastConnectedAt: new Date(),
+        });
         store.addLog({ message: "Appareil connecté avec succès", type: "success" });
 
-        // Récupérer les infos détaillées
-        await this.fetchDeviceInfo();
+        // Les modes Recovery/DFU ne répondent pas forcément à lockdown; l'échec
+        // de cette lecture ne doit pas annuler la connexion USB réelle.
+        if ((mode || store.connection.currentMode) === "normal") {
+          await this.fetchDeviceInfo();
+        }
       } else {
-        store.setConnection({ isConnected: false, currentMode: "disconnected" });
+        store.setConnection({
+          isConnected: false,
+          currentMode: "disconnected",
+          deviceId: null,
+          connectionId: null,
+        });
         store.addLog({
-          message: "Impossible d'établir la connexion avec l'appareil (vérifiez le câble ou libimobiledevice)",
+          message: "Impossible d'établir la connexion avec l'appareil (vérifiez le câble, l'appairage ou libimobiledevice)",
           type: "error",
         });
       }
       return success;
     } catch (error: any) {
+      store.setConnection({ isConnected: false, deviceId: null, connectionId: null });
       store.addLog({
         message: `Erreur de connexion: ${error.message}`,
         type: "error",
@@ -160,7 +189,12 @@ export class DeviceDetector {
     try {
       const success = await window.novaunlock.disconnectDevice(deviceId);
       if (success) {
-        store.setConnection({ isConnected: false, currentMode: "disconnected" });
+        store.setConnection({
+          isConnected: false,
+          currentMode: "disconnected",
+          deviceId: null,
+          connectionId: null,
+        });
         store.setDeviceInfo({
           serial: null,
           model: null,
