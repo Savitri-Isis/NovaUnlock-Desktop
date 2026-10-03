@@ -34,6 +34,9 @@ export interface Connection {
   currentMode: DeviceMode;
   isSearching: boolean;
   lastConnectedAt: Date | null;
+  /** Identity of the USB endpoint currently selected in this session. */
+  deviceId: number | null;
+  connectionId: string | null;
 }
 
 export interface DFUProgress {
@@ -155,6 +158,8 @@ const defaultConnection: Connection = {
   currentMode: "disconnected",
   isSearching: false,
   lastConnectedAt: null,
+  deviceId: null,
+  connectionId: null,
 };
 
 const defaultDfuProgress: DFUProgress = {

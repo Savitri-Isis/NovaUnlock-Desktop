@@ -1,6 +1,6 @@
 /**
  * NovaUnlock — Preload Script
- * Expose les API IPC de manière sécurisée au renderer.
+ * Expose uniquement des API IPC typées et à surface limitée au renderer isolé.
  */
 
 import { contextBridge, ipcRenderer } from "electron";
@@ -45,11 +45,91 @@ export interface ActivationLockStatus {
   message?: string;
 }
 
+export interface NativeToolStatus {
+  diagnosticsReady: boolean;
+  backupReady: boolean;
+  restoreReady: boolean;
+  activationCheckReady: boolean;
+  complete: boolean;
+  hasDlls: boolean;
+  searchRoots: string[];
+  tools: Record<string, boolean>;
+  missing: string[];
+  source: "runtime" | "bundled" | "mixed" | "none";
+}
+
+export interface MasterPreflightResult {
+  task: string;
+  ok: boolean;
+  dryRun: true;
+  canExecute: boolean;
+  blockers: string[];
+  warnings: string[];
+  steps: string[];
+  activationLockNotice: string;
+  backupCount: number;
+  diskFreeGb: number;
+  requirements: {
+    ownerAttestation: boolean;
+    typedConfirmation: boolean;
+    backupPassword: boolean;
+    firmwareFile: boolean;
+    requiredMode: "normal" | "dfu-or-recovery" | null;
+  };
+  capabilities?: Pick<
+    NativeToolStatus,
+    "diagnosticsReady" | "backupReady" | "restoreReady" | "activationCheckReady"
+  >;
+}
+
+export interface MasterExecutionRequest {
+  task: string;
+  device: {
+    modelIdentifier?: string | null;
+    serial?: string | null;
+    mode?: string;
+    activationLockStatus?: string | null;
+  };
+  confirmation?: {
+    ownerAttested?: boolean;
+    typedConfirmation?: string;
+    backupPassword?: string;
+  };
+  firmwarePath?: string;
+}
+
+export interface MasterOperationStatus {
+  id: string;
+  task: string;
+  state: "queued" | "running" | "completed" | "failed" | "blocked";
+  progress: number | null;
+  stage: string;
+  speed?: string;
+  updatedAt: string;
+  result?: {
+    success: boolean;
+    task: string;
+    dryRun: false;
+    stage: string;
+    message: string;
+    backup?: { path: string; encrypted: boolean };
+    report?: {
+      serial: string | null;
+      model: string | null;
+      modelIdentifier: string | null;
+      iosVersion: string | null;
+      batteryLevel: number | null;
+      activationLockStatus: string | null;
+    };
+  };
+}
+
 export type USBChannel = {
   scanDevices: () => Promise<DeviceInfo | null>;
   scanAllDevices?: () => Promise<DeviceInfo[]>;
   checkLibimobiledevice?: () => Promise<boolean>;
-  connectDevice: (deviceId: number) => Promise<boolean>;
+  getNativeToolStatus?: () => Promise<NativeToolStatus>;
+  connectDevice: (deviceId: number, connectionId?: string) => Promise<boolean>;
   disconnectDevice: (deviceId: number) => Promise<boolean>;
   sendDFUCommand: (command: string, args: string) => Promise<{ success: boolean; response?: string }>;
   sendRecoveryCommand: (command: string) => Promise<{ success: boolean; response?: string }>;
@@ -58,7 +138,7 @@ export type USBChannel = {
   getECID: () => Promise<string | null>;
   getActivationLockStatus: () => Promise<ActivationLockStatus>;
   checkJailbreakStatus: () => Promise<boolean>;
-  installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
+  installLibimobiledevice: () => Promise<{ success: boolean; message: string; status: NativeToolStatus }>;
   listBackups: () => Promise<
     Array<{
       path: string;
@@ -70,81 +150,42 @@ export type USBChannel = {
       modifiedAt: string;
     }>
   >;
+  selectFirmwareFile: () => Promise<string | null>;
   downloadFirmware: (url: string, buildId: string) => Promise<string>;
-  preflight: (
-    task: string,
-    device: {
-      modelIdentifier?: string | null;
-      serial?: string | null;
-      mode?: string;
-      activationLockStatus?: string | null;
-    }
-  ) => Promise<{
-    task: string;
-    ok: boolean;
-    dryRun: true;
-    blockers: string[];
-    warnings: string[];
-    steps: string[];
-    activationLockNotice: string;
-    backupCount: number;
-    diskFreeGb: number;
-  }>;
+  preflight: (task: string, device: MasterExecutionRequest["device"]) => Promise<MasterPreflightResult>;
+  executeMaster: (request: MasterExecutionRequest) => Promise<MasterOperationStatus>;
+  getMasterOperationStatus: (operationId: string) => Promise<MasterOperationStatus | null>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 };
 
 contextBridge.exposeInMainWorld("novaunlock", {
-  scanDevices: (): Promise<DeviceInfo | null> =>
-    ipcRenderer.invoke("usb:scan"),
-
-  scanAllDevices: (): Promise<DeviceInfo[]> =>
-    ipcRenderer.invoke("usb:scan-all"),
-
-  checkLibimobiledevice: (): Promise<boolean> =>
-    ipcRenderer.invoke("usb:check-libimobiledevice"),
-
-  connectDevice: (deviceId: number): Promise<boolean> =>
-    ipcRenderer.invoke("usb:connect", deviceId),
-
-  disconnectDevice: (deviceId: number): Promise<boolean> =>
-    ipcRenderer.invoke("usb:disconnect", deviceId),
-
+  scanDevices: (): Promise<DeviceInfo | null> => ipcRenderer.invoke("usb:scan"),
+  scanAllDevices: (): Promise<DeviceInfo[]> => ipcRenderer.invoke("usb:scan-all"),
+  checkLibimobiledevice: (): Promise<boolean> => ipcRenderer.invoke("usb:check-libimobiledevice"),
+  getNativeToolStatus: (): Promise<NativeToolStatus> => ipcRenderer.invoke("usb:native-status"),
+  connectDevice: (deviceId: number, connectionId?: string): Promise<boolean> =>
+    ipcRenderer.invoke("usb:connect", deviceId, connectionId),
+  disconnectDevice: (deviceId: number): Promise<boolean> => ipcRenderer.invoke("usb:disconnect", deviceId),
   sendDFUCommand: (command: string, args: string): Promise<{ success: boolean; response?: string }> =>
     ipcRenderer.invoke("usb:send-dfu-command", command, args),
-
   sendRecoveryCommand: (command: string): Promise<{ success: boolean; response?: string }> =>
     ipcRenderer.invoke("usb:send-recovery-command", command),
-
   flashFirmware: (filePath: string): Promise<{ success: boolean; progress: number; stage: string; speed: string }> =>
     ipcRenderer.invoke("usb:flash-firmware", filePath),
-
-  getDeviceInfo: (): Promise<DeviceDetails | null> =>
-    ipcRenderer.invoke("usb:get-device-info"),
-
-  getECID: (): Promise<string | null> =>
-    ipcRenderer.invoke("usb:get-ecid"),
-
-  getActivationLockStatus: (): Promise<ActivationLockStatus> =>
-    ipcRenderer.invoke("usb:get-activation-lock"),
-
-  checkJailbreakStatus: (): Promise<boolean> =>
-    ipcRenderer.invoke("usb:check-jailbreak"),
-
-  installLibimobiledevice: (): Promise<{ success: boolean; message: string }> =>
-    ipcRenderer.invoke("usb:install-libimobiledevice"),
-
+  getDeviceInfo: (): Promise<DeviceDetails | null> => ipcRenderer.invoke("usb:get-device-info"),
+  getECID: (): Promise<string | null> => ipcRenderer.invoke("usb:get-ecid"),
+  getActivationLockStatus: (): Promise<ActivationLockStatus> => ipcRenderer.invoke("usb:get-activation-lock"),
+  checkJailbreakStatus: (): Promise<boolean> => ipcRenderer.invoke("usb:check-jailbreak"),
+  installLibimobiledevice: () => ipcRenderer.invoke("usb:install-libimobiledevice"),
   listBackups: () => ipcRenderer.invoke("master:backups"),
+  selectFirmwareFile: () => ipcRenderer.invoke("master:select-firmware"),
   downloadFirmware: (url: string, buildId: string) =>
     ipcRenderer.invoke("master:download-firmware", url, buildId),
-  preflight: (
-    task: string,
-    device: {
-      modelIdentifier?: string | null;
-      serial?: string | null;
-      mode?: string;
-      activationLockStatus?: string | null;
-    }
-  ) => ipcRenderer.invoke("master:preflight", task, device),
+  preflight: (task: string, device: MasterExecutionRequest["device"]) =>
+    ipcRenderer.invoke("master:preflight", task, device),
+  executeMaster: (request: MasterExecutionRequest) => ipcRenderer.invoke("master:execute", request),
+  getMasterOperationStatus: (operationId: string) =>
+    ipcRenderer.invoke("master:operation-status", operationId),
   appendAudit: (task: string, deviceId: string, event: string) =>
     ipcRenderer.invoke("master:audit", task, deviceId, event),
 });

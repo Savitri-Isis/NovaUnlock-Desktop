@@ -1,10 +1,29 @@
+import { useEffect, useState } from "react";
 import { useDeviceStore } from "../store/device-store";
+import type { NativeToolStatus } from "../types/electron";
 
 export default function Settings() {
   const isLibimobiledeviceInstalled = useDeviceStore((s) => s.isLibimobiledeviceInstalled);
   const connection = useDeviceStore((s) => s.connection);
   const logs = useDeviceStore((s) => s.logs);
   const clearLogs = useDeviceStore((s) => s.clearLogs);
+  const [nativeStatus, setNativeStatus] = useState<NativeToolStatus | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!window.novaunlock.getNativeToolStatus) return;
+    void window.novaunlock
+      .getNativeToolStatus()
+      .then((status) => {
+        if (active) setNativeStatus(status);
+      })
+      .catch(() => {
+        if (active) setNativeStatus(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -56,13 +75,25 @@ export default function Settings() {
             {isLibimobiledeviceInstalled ? "Installé" : "Non installé"}
           </span>
         </div>
-        <div className="mt-3 p-3 bg-background rounded-lg">
+        <div className="mt-3 p-3 bg-background rounded-lg space-y-1">
           <p className="text-xs text-muted">
-            Dossier: <span className="font-mono">native/libimobiledevice/</span>
+            Source : <span className="font-mono">{nativeStatus?.source || "non vérifiée"}</span>
           </p>
-          <p className="text-xs text-muted mt-1">
-            Binaires: ideviceinfo, irecovery, idevicerestore, idevice_id
+          <p className="text-xs text-muted">
+            Binaires requis : ideviceinfo, idevice_id, idevicebackup2, idevicerestore, irecovery, ideviceactivation
           </p>
+          {nativeStatus && (
+            <>
+              <p className="text-xs text-muted">
+                Capacités : diagnostic {nativeStatus.diagnosticsReady ? "✓" : "✗"} · sauvegarde {nativeStatus.backupReady ? "✓" : "✗"} · restauration {nativeStatus.restoreReady ? "✓" : "✗"}
+              </p>
+              {nativeStatus.missing.length > 0 && (
+                <p className="text-xs text-warning break-words">
+                  Manquants : {nativeStatus.missing.join(", ")}
+                </p>
+              )}
+            </>
+          )}
         </div>
       </div>
 

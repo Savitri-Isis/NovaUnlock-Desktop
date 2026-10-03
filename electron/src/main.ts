@@ -3,19 +3,28 @@
  * Gère la fenêtre principale, la politique de sécurité et la validation IPC.
  */
 
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import * as path from "path";
 import {
   appendAudit,
   discoverBackups,
   downloadFirmware,
   evaluatePreflight,
+  isDestructiveMasterTask,
   validateFirmwareUrl,
   validateMasterTask,
   type MasterTask,
 } from "./master-service";
+import { getNativeToolStatus, importNativePayload } from "./usb-scanner";
+import { getMasterOperationStatus, startMasterOperation } from "./master-operation-manager";
 
 let mainWindow: BrowserWindow | null = null;
+
+/** Do not disclose absolute user/runtime paths to the isolated renderer. */
+function rendererNativeStatus() {
+  const status = getNativeToolStatus();
+  return { ...status, searchRoots: [] };
+}
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   "support.apple.com",
@@ -90,12 +99,20 @@ ipcMain.handle("usb:check-libimobiledevice", async () => {
   return isLibimobiledeviceInstalled();
 });
 
-ipcMain.handle("usb:connect", async (_, deviceId: unknown) => {
+ipcMain.handle("usb:native-status", async () => rendererNativeStatus());
+
+ipcMain.handle("usb:connect", async (_, deviceId: unknown, connectionId: unknown) => {
   if (typeof deviceId !== "number" || !Number.isInteger(deviceId) || deviceId < 0) {
     throw new Error("Identifiant de périphérique USB invalide.");
   }
+  if (
+    connectionId != null &&
+    (typeof connectionId !== "string" || connectionId.length > 128 || !/^[A-Za-z0-9-]+$/.test(connectionId))
+  ) {
+    throw new Error("Identifiant de connexion USB invalide.");
+  }
   const { connectDevice } = require(path.join(__dirname, "./usb-scanner"));
-  return await connectDevice(deviceId);
+  return await connectDevice(deviceId, connectionId || undefined);
 });
 
 ipcMain.handle("usb:disconnect", async (_, deviceId: unknown) => {
@@ -123,7 +140,7 @@ ipcMain.handle("usb:send-recovery-command", async (_, command: unknown) => {
   return await sendRecoveryCommand(command.trim());
 });
 
-ipcMain.handle("usb:flash-firmware", async (_, filePath: unknown) => {
+ipcMain.handle("usb:flash-firmware", async (_event, filePath: unknown) => {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
     return {
       success: false,
@@ -132,8 +149,16 @@ ipcMain.handle("usb:flash-firmware", async (_, filePath: unknown) => {
       speed: "",
     };
   }
-  const { flashFirmware } = require(path.join(__dirname, "./usb-scanner"));
-  return await flashFirmware(filePath);
+
+  // Legacy renderer channel deliberately cannot start a destructive child process.
+  // A restoration is launched only by master:execute after its independently
+  // checked preflight, explicit ownership attestation and typed confirmation.
+  return {
+    success: false,
+    progress: 0,
+    stage: "Restauration protégée : utilisez Application maîtresse pour le prévol et la confirmation officielle.",
+    speed: "",
+  };
 });
 
 ipcMain.handle("usb:get-device-info", async () => {
@@ -157,11 +182,35 @@ ipcMain.handle("usb:check-jailbreak", async () => {
 });
 
 ipcMain.handle("usb:install-libimobiledevice", async () => {
-  const { installLibimobiledevice } = require(path.join(__dirname, "./usb-scanner"));
-  return await installLibimobiledevice();
+  const selected = await dialog.showOpenDialog({
+    title: "Sélectionnez le dossier libimobiledevice Windows x64 extrait",
+    properties: ["openDirectory"],
+    buttonLabel: "Importer les binaires",
+  });
+
+  if (selected.canceled || selected.filePaths.length === 0) {
+    return {
+      success: false,
+      message: "Importation annulée : aucun dossier n'a été sélectionné.",
+      status: rendererNativeStatus(),
+    };
+  }
+
+  const imported = importNativePayload(selected.filePaths[0]);
+  return { ...imported, status: rendererNativeStatus() };
 });
 
 ipcMain.handle("master:backups", async () => discoverBackups());
+
+ipcMain.handle("master:select-firmware", async () => {
+  const selected = await dialog.showOpenDialog({
+    title: "Sélectionnez un IPSW Apple signé",
+    properties: ["openFile"],
+    filters: [{ name: "Firmware IPSW", extensions: ["ipsw"] }],
+    buttonLabel: "Utiliser ce firmware",
+  });
+  return selected.canceled || selected.filePaths.length === 0 ? null : selected.filePaths[0];
+});
 
 ipcMain.handle("master:download-firmware", async (_, url: unknown, buildId: unknown) => {
   validateFirmwareUrl(url);
@@ -175,15 +224,38 @@ ipcMain.handle("master:preflight", async (_, task: unknown, device: unknown) => 
   const validTask: MasterTask = validateMasterTask(task);
   const safeDevice =
     device && typeof device === "object"
-      ? (device as {
+      ? ({
+          ...(device as {
+            modelIdentifier?: string | null;
+            serial?: string | null;
+            mode?: string;
+            activationLockStatus?: string | null;
+          }),
+        } as {
           modelIdentifier?: string | null;
           serial?: string | null;
           mode?: string;
           activationLockStatus?: string | null;
         })
       : {};
-  return evaluatePreflight(validTask, safeDevice);
+
+  // The renderer's cached status is useful for display only. Before a destructive
+  // task, ask the native probe again and fail closed if it cannot explicitly verify
+  // the lock state.
+  if (isDestructiveMasterTask(validTask)) {
+    const { getActivationLockStatus } = require(path.join(__dirname, "./usb-scanner"));
+    const lock = await getActivationLockStatus();
+    safeDevice.activationLockStatus = lock.state;
+  }
+
+  return evaluatePreflight(validTask, safeDevice, getNativeToolStatus());
 });
+
+ipcMain.handle("master:execute", async (_, request: unknown) => startMasterOperation(request));
+
+ipcMain.handle("master:operation-status", async (_, operationId: unknown) =>
+  getMasterOperationStatus(operationId)
+);
 
 ipcMain.handle("master:audit", async (_, task: unknown, deviceId: unknown, event: unknown) => {
   const validTask: MasterTask = validateMasterTask(task);

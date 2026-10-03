@@ -17,9 +17,7 @@ export default function DeviceConnect() {
     setIsInstallingLib(true);
     try {
       const result = await window.novaunlock.installLibimobiledevice();
-      if (result.success) {
-        setLibimobiledeviceInstalled(true);
-      }
+      setLibimobiledeviceInstalled(result.status.diagnosticsReady);
       alert(result.message);
     } catch (error: any) {
       alert(`Erreur: ${error.message}`);
@@ -29,7 +27,11 @@ export default function DeviceConnect() {
   };
 
   const handleDisconnect = async () => {
-    await DeviceDetector.disconnect(0);
+    if (connection.deviceId == null) {
+      alert("Aucun endpoint USB actif à déconnecter.");
+      return;
+    }
+    await DeviceDetector.disconnect(connection.deviceId);
   };
 
   return (
@@ -99,19 +101,17 @@ export default function DeviceConnect() {
             <h3 className="text-sm font-semibold text-foreground">libimobiledevice</h3>
             <p className="text-xs text-muted">
               {isLibimobiledeviceInstalled
-                ? "Installé — Protocole Apple actif"
-                : "Non installé — Requis pour les opérations USB"}
+                ? "Diagnostic disponible — vérifiez les capacités dans Maître"
+                : "Importez le paquet Windows x64 officiel pour les opérations USB"}
             </p>
           </div>
-          {!isLibimobiledeviceInstalled && (
-            <button
-              onClick={handleInstallLib}
-              disabled={isInstallingLib}
-              className="px-4 py-2 rounded-lg bg-accent text-white text-xs font-semibold disabled:opacity-50"
-            >
-              {isInstallingLib ? "Installation..." : "Installer"}
-            </button>
-          )}
+          <button
+            onClick={handleInstallLib}
+            disabled={isInstallingLib}
+            className="px-4 py-2 rounded-lg bg-accent text-white text-xs font-semibold disabled:opacity-50"
+          >
+            {isInstallingLib ? "Importation..." : "Importer / mettre à jour"}
+          </button>
         </div>
       </div>
 
