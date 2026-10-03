@@ -4,6 +4,7 @@
  */
 
 import { useDeviceStore } from "../../store/device-store";
+import type { ActivationLockStatus } from "../../types/electron";
 
 export interface DetectedDevice {
   deviceId: number;
@@ -18,6 +19,48 @@ export interface DetectedDevice {
 }
 
 export class DeviceDetector {
+  /**
+   * Vérifier dynamiquement si libimobiledevice est installé.
+   */
+  static async checkLibimobiledevice(): Promise<boolean> {
+    try {
+      if (window.novaunlock?.checkLibimobiledevice) {
+        const installed = await window.novaunlock.checkLibimobiledevice();
+        useDeviceStore.getState().setLibimobiledeviceInstalled(installed);
+        return installed;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Scanner tous les appareils Apple connectés en USB.
+   */
+  static async scanAll(): Promise<DetectedDevice[]> {
+    try {
+      if (window.novaunlock?.scanAllDevices) {
+        const devices = await window.novaunlock.scanAllDevices();
+        return devices.map((device) => ({
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+          productName: device.productName,
+          serialNumber: device.serialNumber,
+          manufacturer: device.manufacturer,
+          vendorId: device.vendorId,
+          productId: device.productId,
+          mode: device.mode,
+          connectionId: device.connectionId,
+        }));
+      }
+      const single = await this.scan();
+      return single ? [single] : [];
+    } catch {
+      return [];
+    }
+  }
+
   /**
    * Scanner les appareils Apple connectés en USB.
    */
@@ -91,6 +134,12 @@ export class DeviceDetector {
 
         // Récupérer les infos détaillées
         await this.fetchDeviceInfo();
+      } else {
+        store.setConnection({ isConnected: false, currentMode: "disconnected" });
+        store.addLog({
+          message: "Impossible d'établir la connexion avec l'appareil (vérifiez le câble ou libimobiledevice)",
+          type: "error",
+        });
       }
       return success;
     } catch (error: any) {
@@ -123,6 +172,7 @@ export class DeviceDetector {
           storageUsed: null,
           storageTotal: null,
           jailbreakStatus: false,
+          jailbreakState: "not-checked",
           activationLockStatus: null,
           connectionType: null,
           ecid: null,
@@ -163,6 +213,7 @@ export class DeviceDetector {
           storageUsed: info.storageUsed,
           storageTotal: info.storageTotal,
           jailbreakStatus: info.jailbreakStatus,
+          jailbreakState: info.jailbreakState || (info.jailbreakStatus ? "yes" : "no"),
           activationLockStatus: info.activationLockStatus,
           connectionType: info.connectionType,
           ecid: info.ecid,
@@ -193,13 +244,18 @@ export class DeviceDetector {
   }
 
   /**
-   * Vérifier le statut Activation Lock.
+   * Vérifier le statut Activation Lock (mode fail-closed : inconnu en cas d'erreur).
    */
-  static async getActivationLockStatus(): Promise<{ locked: boolean; account: string | null }> {
+  static async getActivationLockStatus(): Promise<ActivationLockStatus> {
     try {
       return await window.novaunlock.getActivationLockStatus();
     } catch {
-      return { locked: false, account: null };
+      return {
+        state: "unknown",
+        locked: null,
+        account: null,
+        message: "Statut inconnu — opération sensible bloquée",
+      };
     }
   }
 

@@ -1,11 +1,12 @@
 /**
  * NovaUnlock Desktop — Zustand Store
- * Gestion centralisée de l'état de l'application desktop.
+ * Gestion centralisée de l'état de l'application desktop avec persistance non sensible.
  */
 
 import { create } from "zustand";
 
 export type DeviceMode = "normal" | "dfu" | "recovery" | "kdfu" | "unknown" | "disconnected";
+export type JailbreakState = "yes" | "no" | "unknown" | "not-checked";
 
 export interface DeviceInfo {
   serial: string | null;
@@ -18,6 +19,7 @@ export interface DeviceInfo {
   storageUsed: string | null;
   storageTotal: string | null;
   jailbreakStatus: boolean;
+  jailbreakState?: JailbreakState;
   activationLockStatus: string | null;
   connectionType: string | null;
   ecid: string | null;
@@ -88,6 +90,45 @@ interface DeviceState {
   resetAll: () => void;
 }
 
+const STORAGE_KEY = "novaunlock:diagnostics:v1";
+
+function loadPersistedLogs(): LogEntry[] {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.logs)) return [];
+    return parsed.logs.slice(0, 50).map((item: any) => ({
+      id: String(item.id || Date.now()),
+      message: String(item.message || ""),
+      type: ["info", "success", "warning", "error"].includes(item.type) ? item.type : "info",
+      timestamp: new Date(item.timestamp || Date.now()),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function savePersistedLogs(logs: LogEntry[]): void {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        logs: logs.slice(0, 50).map((l) => ({
+          id: l.id,
+          message: l.message,
+          type: l.type,
+          timestamp: l.timestamp.toISOString(),
+        })),
+      })
+    );
+  } catch {
+    // Ignorer si localStorage est indisponible
+  }
+}
+
 const defaultDeviceInfo: DeviceInfo = {
   serial: null,
   model: null,
@@ -99,6 +140,7 @@ const defaultDeviceInfo: DeviceInfo = {
   storageUsed: null,
   storageTotal: null,
   jailbreakStatus: false,
+  jailbreakState: "not-checked",
   activationLockStatus: null,
   connectionType: null,
   ecid: null,
@@ -137,7 +179,7 @@ export const useDeviceStore = create<DeviceState>((set) => ({
   firmwareDownloadProgress: defaultFirmwareDownloadProgress,
   availableFirmwares: [],
   selectedFirmware: null,
-  logs: [],
+  logs: loadPersistedLogs(),
   isLibimobiledeviceInstalled: false,
 
   setDeviceInfo: (info) =>
@@ -167,14 +209,19 @@ export const useDeviceStore = create<DeviceState>((set) => ({
     set({ selectedFirmware: firmware }),
 
   addLog: (entry) =>
-    set((state) => ({
-      logs: [
-        { ...entry, id: Date.now().toString(), timestamp: new Date() },
+    set((state) => {
+      const nextLogs = [
+        { ...entry, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date() },
         ...state.logs,
-      ].slice(0, 200),
-    })),
+      ].slice(0, 200);
+      savePersistedLogs(nextLogs);
+      return { logs: nextLogs };
+    }),
 
-  clearLogs: () => set({ logs: [] }),
+  clearLogs: () => {
+    savePersistedLogs([]);
+    set({ logs: [] });
+  },
 
   setLibimobiledeviceInstalled: (installed) =>
     set({ isLibimobiledeviceInstalled: installed }),

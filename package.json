@@ -13,7 +13,7 @@
     "package:win": "npm run build:all && electron-builder --win",
     "package:win:portable": "npm run build:all && electron-builder --win portable",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint src electron --ext .ts,.tsx"
   },
   "build": {
     "appId": "com.novaunlock.desktop",
@@ -81,11 +81,15 @@
     "@types/node-hid": "^1.3.4",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "electron": "^28.2.0",
     "electron-builder": "^24.13.3",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react-hooks": "^4.6.2",
     "jsdom": "^30.1.1",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",

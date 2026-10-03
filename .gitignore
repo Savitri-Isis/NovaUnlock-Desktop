@@ -5,8 +5,10 @@ node_modules/
 dist/
 release/
 
-# Native binaries (downloaded separately)
-native/
+# Native binaries (downloaded separately; keep directory structure & READMEs tracked)
+native/**/*.exe
+native/**/*.dll
+native/**/*.zip
 
 # IDE
 .vscode/

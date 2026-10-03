@@ -12,15 +12,14 @@
  * - Les binaires sont inclus dans native/libimobiledevice/
  */
 
-import { execSync, spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
-import { EventEmitter } from "events";
 
 // --- Apple USB Constants ---
 
-const APPLE_VENDOR_ID = 0x05ac;
-const DEVICE_IDS = {
+export const APPLE_VENDOR_ID = 0x05ac;
+export const DEVICE_IDS = {
   DFU: 0x1281,
   RECOVERY: 0x1282,
   NORMAL: 0x1290,
@@ -31,6 +30,10 @@ const DEVICE_IDS = {
 
 // --- Types ---
 
+export type DeviceConnectionMode = "normal" | "dfu" | "recovery" | "kdfu" | "unknown";
+export type ActivationLockState = "locked" | "unlocked" | "unknown" | "unavailable";
+export type JailbreakState = "yes" | "no" | "unknown" | "not-checked";
+
 export interface USBDevice {
   deviceId: number;
   vendorId: number;
@@ -39,7 +42,7 @@ export interface USBDevice {
   productName: string;
   serialNumber: string | null;
   manufacturer: string;
-  mode: "normal" | "dfu" | "recovery" | "kdfu" | "unknown";
+  mode: DeviceConnectionMode;
   connectionId: string;
 }
 
@@ -50,91 +53,218 @@ export interface FlashProgress {
   speed: string;
 }
 
+export interface ActivationLockStatusResult {
+  state: ActivationLockState;
+  locked: boolean | null;
+  account: string | null;
+  message?: string;
+}
+
+const connectedDeviceIds = new Set<number>();
+
 // --- Helpers ---
 
-function getModeFromProductId(productId: number): "normal" | "dfu" | "recovery" | "kdfu" | "unknown" {
+export function getModeFromProductId(productId: number): DeviceConnectionMode {
   switch (productId) {
-    case DEVICE_IDS.DFU: return "dfu";
-    case DEVICE_IDS.RECOVERY: return "recovery";
+    case DEVICE_IDS.DFU:
+      return "dfu";
+    case DEVICE_IDS.RECOVERY:
+      return "recovery";
     case DEVICE_IDS.NORMAL:
     case DEVICE_IDS.NORMAL_2:
     case DEVICE_IDS.NORMAL_3:
       return "normal";
-    case DEVICE_IDS.KDFU: return "kdfu";
-    default: return "unknown";
+    case DEVICE_IDS.KDFU:
+      return "kdfu";
+    default:
+      return "unknown";
   }
 }
 
-function getNativePath(): string {
-  return path.join(process.resourcesPath || __dirname, "../../native");
+export function getNativePath(envOverride?: {
+  isPackaged?: boolean;
+  resourcesPath?: string;
+  appPath?: string;
+}): string {
+  if (envOverride && typeof envOverride.isPackaged === "boolean") {
+    if (envOverride.isPackaged && envOverride.resourcesPath) {
+      return path.join(envOverride.resourcesPath, "native");
+    }
+    if (!envOverride.isPackaged && envOverride.appPath) {
+      return path.join(envOverride.appPath, "native");
+    }
+  }
+
+  try {
+    const electron = require("electron");
+    const app = electron?.app;
+    if (app && typeof app.isPackaged === "boolean") {
+      if (app.isPackaged) {
+        const resPath =
+          (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath || __dirname;
+        return path.join(resPath, "native");
+      }
+      return path.join(app.getAppPath(), "native");
+    }
+  } catch {
+    // Exécution hors processus principal Electron (ex: tests unitaires)
+  }
+
+  return path.resolve(__dirname, "../../native");
 }
 
-function isLibimobiledeviceInstalled(): boolean {
-  const nativePath = getNativePath();
-  const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
+export function isLibimobiledeviceInstalled(nativeDir = getNativePath()): boolean {
+  const ideviceinfo = path.join(nativeDir, "libimobiledevice", "ideviceinfo.exe");
   return fs.existsSync(ideviceinfo);
+}
+
+export function validateIpswPath(filePath: unknown): string {
+  if (typeof filePath !== "string" || filePath.trim().length === 0) {
+    throw new Error("Chemin du fichier firmware invalide.");
+  }
+  if (filePath.includes("\0")) {
+    throw new Error("Caractères interdits dans le chemin du fichier firmware.");
+  }
+  const trimmed = filePath.trim();
+  if (!trimmed.toLowerCase().endsWith(".ipsw")) {
+    throw new Error("Le fichier firmware doit avoir l'extension .ipsw.");
+  }
+  const resolved = path.resolve(trimmed);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    throw new Error("Le fichier firmware .ipsw spécifié est introuvable sur le disque.");
+  }
+  return resolved;
+}
+
+export function parseRestoreOutput(
+  output: string,
+  current: { progress: number; stage: string; speed: string }
+): { progress: number; stage: string; speed: string } {
+  let { progress, stage, speed } = current;
+
+  if (/Preparing|Préparation/i.test(output)) {
+    stage = "Préparation...";
+  }
+  if (/Extracting|Extraction/i.test(output)) {
+    stage = "Extraction du firmware...";
+  }
+  if (/Restoring|Restauration/i.test(output)) {
+    stage = "Restauration en cours...";
+  }
+  if (/Flashing|Flash/i.test(output)) {
+    stage = "Flash firmware...";
+  }
+  if (/Verifying|Vérification/i.test(output)) {
+    stage = "Vérification...";
+  }
+
+  const pctMatches = [...output.matchAll(/(\d{1,3})%/g)];
+  if (pctMatches.length > 0) {
+    const parsed = parseInt(pctMatches[pctMatches.length - 1][1], 10);
+    if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+      progress = parsed;
+    }
+  }
+
+  const speedMatch = output.match(/(\d+(?:\.\d+)?)\s*MB\/s/i);
+  if (speedMatch) {
+    speed = `${speedMatch[1]} MB/s`;
+  }
+
+  return { progress, stage, speed };
 }
 
 // --- Scan Devices ---
 
-export async function scanDevices(): Promise<USBDevice | null> {
-  // Méthode 1 : Utiliser libimobiledevice si installé
+export async function scanAllDevices(): Promise<USBDevice[]> {
   if (isLibimobiledeviceInstalled()) {
-    return await scanWithLibimobiledevice();
+    const libDevices = await scanAllWithLibimobiledevice();
+    if (libDevices.length > 0) {
+      return libDevices;
+    }
   }
 
-  // Méthode 2 : Utiliser node-hid pour la détection bas niveau
-  return await scanWithNodeHid();
+  const hidDevices = await scanAllWithNodeHid();
+  if (hidDevices.length > 0) {
+    return hidDevices;
+  }
+
+  return await scanAllWithNodeUSB();
 }
 
-async function scanWithLibimobiledevice(): Promise<USBDevice | null> {
+export async function scanDevices(): Promise<USBDevice | null> {
+  const devices = await scanAllDevices();
+  return devices[0] ?? null;
+}
+
+async function scanAllWithLibimobiledevice(): Promise<USBDevice[]> {
   try {
     const nativePath = getNativePath();
     const ideviceid = path.join(nativePath, "libimobiledevice", "idevice_id.exe");
-    const result = execSync(`"${ideviceid}" -l`, { timeout: 5000, encoding: "utf-8" }).trim();
-
-    if (!result) {
-      return await scanWithNodeHid();
+    if (!fs.existsSync(ideviceid)) {
+      return [];
     }
 
-    const udid = result.split("\n")[0];
+    const result = execFileSync(ideviceid, ["-l"], {
+      timeout: 5000,
+      encoding: "utf-8",
+      windowsHide: true,
+    }).trim();
+
+    if (!result) {
+      return [];
+    }
+
+    const udids = result
+      .split(/\r?\n/)
+      .map((u) => u.trim())
+      .filter(Boolean);
+
     const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-    const infoResult = execSync(`"${ideviceinfo}" -u "${udid}"`, { timeout: 5000, encoding: "utf-8" });
+    const devices: USBDevice[] = [];
 
-    const productType = infoResult.match(/ProductType: (.+)/)?.[1]?.trim() || "iPhone";
-    const serialNumber = infoResult.match(/SerialNumber: (.+)/)?.[1]?.trim() || null;
-    const deviceName = infoResult.match(/DeviceName: (.+)/)?.[1]?.trim() || "iPhone";
-    const iosVersion = infoResult.match(/ProductVersion: (.+)/)?.[1]?.trim() || "Unknown";
+    udids.forEach((udid, index) => {
+      try {
+        const infoResult = execFileSync(ideviceinfo, ["-u", udid], {
+          timeout: 5000,
+          encoding: "utf-8",
+          windowsHide: true,
+        });
 
-    return {
-      deviceId: 1,
-      vendorId: APPLE_VENDOR_ID,
-      productId: DEVICE_IDS.NORMAL,
-      deviceName,
-      productName: productType,
-      serialNumber,
-      manufacturer: "Apple Inc.",
-      mode: "normal",
-      connectionId: udid,
-    };
+        const productType = infoResult.match(/ProductType: (.+)/)?.[1]?.trim() || "iPhone";
+        const serialNumber = infoResult.match(/SerialNumber: (.+)/)?.[1]?.trim() || null;
+        const deviceName = infoResult.match(/DeviceName: (.+)/)?.[1]?.trim() || "iPhone";
+
+        devices.push({
+          deviceId: index + 1,
+          vendorId: APPLE_VENDOR_ID,
+          productId: DEVICE_IDS.NORMAL,
+          deviceName,
+          productName: productType,
+          serialNumber,
+          manufacturer: "Apple Inc.",
+          mode: "normal",
+          connectionId: udid,
+        });
+      } catch {
+        // Ignorer un appareil qui ne répond pas et continuer le scan
+      }
+    });
+
+    return devices;
   } catch {
-    return await scanWithNodeHid();
+    return [];
   }
 }
 
-async function scanWithNodeHid(): Promise<USBDevice | null> {
+async function scanAllWithNodeHid(): Promise<USBDevice[]> {
   try {
     const HID = require("node-hid");
     const devices = HID.devices();
-    const appleDevice = devices.find((d: any) => d.vendorId === APPLE_VENDOR_ID);
+    const appleDevices = devices.filter((d: any) => d.vendorId === APPLE_VENDOR_ID);
 
-    if (!appleDevice) {
-      // Fallback : utiliser usb pour détecter les appareils non-HID
-      return await scanWithNodeUSB();
-    }
-
-    return {
-      deviceId: appleDevice.deviceId,
+    return appleDevices.map((appleDevice: any, idx: number) => ({
+      deviceId: typeof appleDevice.deviceId === "number" ? appleDevice.deviceId : idx + 1,
       vendorId: appleDevice.vendorId,
       productId: appleDevice.productId,
       deviceName: appleDevice.product || "Apple Device",
@@ -142,27 +272,21 @@ async function scanWithNodeHid(): Promise<USBDevice | null> {
       serialNumber: appleDevice.serialNumber || null,
       manufacturer: appleDevice.manufacturer || "Apple Inc.",
       mode: getModeFromProductId(appleDevice.productId),
-      connectionId: `${appleDevice.vendorId}-${appleDevice.productId}-${appleDevice.serialNumber || "unknown"}`,
-    };
+      connectionId: `${appleDevice.vendorId}-${appleDevice.productId}-${appleDevice.serialNumber || idx + 1}`,
+    }));
   } catch {
-    return await scanWithNodeUSB();
+    return [];
   }
 }
 
-async function scanWithNodeUSB(): Promise<USBDevice | null> {
+async function scanAllWithNodeUSB(): Promise<USBDevice[]> {
   try {
-    // usb@3.x expose une API WebUSB asynchrone (l’ancienne API getDeviceList
-    // appartenait à node-usb/usb v2 et n’existe plus).
     const { usb } = require("usb");
     const devices = await usb.getDevices();
-    const appleDevice = devices.find((d: any) => d.vendorId === APPLE_VENDOR_ID);
+    const appleDevices = devices.filter((d: any) => d.vendorId === APPLE_VENDOR_ID);
 
-    if (!appleDevice) {
-      return null;
-    }
-
-    return {
-      deviceId: appleDevice.address,
+    return appleDevices.map((appleDevice: any, idx: number) => ({
+      deviceId: typeof appleDevice.address === "number" ? appleDevice.address : idx + 1,
       vendorId: appleDevice.vendorId,
       productId: appleDevice.productId,
       deviceName: appleDevice.productName || "Apple Device",
@@ -170,62 +294,86 @@ async function scanWithNodeUSB(): Promise<USBDevice | null> {
       serialNumber: appleDevice.serialNumber || null,
       manufacturer: appleDevice.manufacturerName || "Apple Inc.",
       mode: getModeFromProductId(appleDevice.productId),
-      connectionId: `${appleDevice.vendorId}-${appleDevice.productId}-${appleDevice.serialNumber || appleDevice.address}`,
-    };
+      connectionId: `${appleDevice.vendorId}-${appleDevice.productId}-${appleDevice.serialNumber || appleDevice.address || idx + 1}`,
+    }));
   } catch {
-    return null;
+    return [];
   }
 }
 
 // --- Connect / Disconnect ---
 
 export async function connectDevice(deviceId: number): Promise<boolean> {
+  if (typeof deviceId !== "number" || !Number.isInteger(deviceId) || deviceId < 0) {
+    return false;
+  }
+
   if (isLibimobiledeviceInstalled()) {
     try {
       const nativePath = getNativePath();
       const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-      execSync(`"${ideviceinfo}"`, { timeout: 5000 });
+      const output = execFileSync(ideviceinfo, [], {
+        timeout: 5000,
+        encoding: "utf-8",
+        windowsHide: true,
+      }).trim();
+      if (!output || /ERROR|No device found/i.test(output)) {
+        return false;
+      }
+      connectedDeviceIds.add(deviceId);
       return true;
     } catch {
       return false;
     }
   }
+
+  // Sans libimobiledevice, vérifier qu'un périphérique USB Apple réel correspond au deviceId
+  const detectedDevices = await scanAllDevices();
+  const matchingDevice = detectedDevices.find((d) => d.deviceId === deviceId);
+  if (!matchingDevice) {
+    return false;
+  }
+
+  connectedDeviceIds.add(deviceId);
   return true;
 }
 
 export async function disconnectDevice(deviceId: number): Promise<boolean> {
+  if (typeof deviceId !== "number" || !Number.isInteger(deviceId) || deviceId < 0) {
+    return false;
+  }
+  connectedDeviceIds.delete(deviceId);
   return true;
 }
 
 // --- DFU Commands ---
 
-export async function sendDFUCommand(command: string, args: string): Promise<{ success: boolean; response?: string }> {
-  try {
-    const nativePath = getNativePath();
+export async function sendDFUCommand(
+  command: string,
+  _args: string
+): Promise<{ success: boolean; response?: string }> {
+  if (typeof command !== "string" || !["enter_dfu", "exit_dfu", "flash"].includes(command)) {
+    return { success: false, response: `Commande inconnue: ${String(command)}` };
+  }
 
-    switch (command) {
-      case "enter_dfu": {
-        // Utiliser irecovery pour entrer en DFU
-        const irecovery = path.join(nativePath, "libimobiledevice", "irecovery.exe");
-        execSync(`"${irecovery}" -c "setenv auto-boot true"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "saveenv"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "reboot"`, { timeout: 10000 });
-        return { success: true };
-      }
-      case "exit_dfu": {
-        const irecovery = path.join(nativePath, "libimobiledevice", "irecovery.exe");
-        execSync(`"${irecovery}" -c "setenv auto-boot true"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "saveenv"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "reboot"`, { timeout: 10000 });
-        return { success: true };
-      }
-      case "flash": {
-        // Le flash sera géré par flashFirmware
-        return { success: true };
-      }
-      default:
-        return { success: false, response: `Commande inconnue: ${command}` };
-    }
+  if (command === "flash") {
+    return { success: true };
+  }
+
+  const nativePath = getNativePath();
+  const irecovery = path.join(nativePath, "libimobiledevice", "irecovery.exe");
+  if (!fs.existsSync(irecovery)) {
+    return {
+      success: false,
+      response: "Binaire irecovery.exe introuvable dans native/libimobiledevice/",
+    };
+  }
+
+  try {
+    execFileSync(irecovery, ["-c", "setenv auto-boot true"], { timeout: 10000, windowsHide: true });
+    execFileSync(irecovery, ["-c", "saveenv"], { timeout: 10000, windowsHide: true });
+    execFileSync(irecovery, ["-c", "reboot"], { timeout: 10000, windowsHide: true });
+    return { success: true };
   } catch (error: any) {
     return { success: false, response: error.message };
   }
@@ -233,30 +381,35 @@ export async function sendDFUCommand(command: string, args: string): Promise<{ s
 
 // --- Recovery Commands ---
 
-export async function sendRecoveryCommand(command: string): Promise<{ success: boolean; response?: string }> {
+export async function sendRecoveryCommand(
+  command: string
+): Promise<{ success: boolean; response?: string }> {
+  if (typeof command !== "string" || !["enter_recovery", "exit_recovery", "flash"].includes(command)) {
+    return { success: false, response: `Commande inconnue: ${String(command)}` };
+  }
+
+  if (command === "flash") {
+    return { success: true };
+  }
+
+  const nativePath = getNativePath();
+  const irecovery = path.join(nativePath, "libimobiledevice", "irecovery.exe");
+  if (!fs.existsSync(irecovery)) {
+    return {
+      success: false,
+      response: "Binaire irecovery.exe introuvable dans native/libimobiledevice/",
+    };
+  }
+
   try {
-    const nativePath = getNativePath();
-    const irecovery = path.join(nativePath, "libimobiledevice", "irecovery.exe");
-
-    switch (command) {
-      case "enter_recovery":
-        execSync(`"${irecovery}" -c "setenv auto-boot false"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "saveenv"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "reboot"`, { timeout: 10000 });
-        return { success: true };
-
-      case "exit_recovery":
-        execSync(`"${irecovery}" -c "setenv auto-boot true"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "saveenv"`, { timeout: 10000 });
-        execSync(`"${irecovery}" -c "reboot"`, { timeout: 10000 });
-        return { success: true };
-
-      case "flash":
-        return { success: true };
-
-      default:
-        return { success: false, response: `Commande inconnue: ${command}` };
-    }
+    const autoBootValue = command === "enter_recovery" ? "false" : "true";
+    execFileSync(irecovery, ["-c", `setenv auto-boot ${autoBootValue}`], {
+      timeout: 10000,
+      windowsHide: true,
+    });
+    execFileSync(irecovery, ["-c", "saveenv"], { timeout: 10000, windowsHide: true });
+    execFileSync(irecovery, ["-c", "reboot"], { timeout: 10000, windowsHide: true });
+    return { success: true };
   } catch (error: any) {
     return { success: false, response: error.message };
   }
@@ -265,68 +418,90 @@ export async function sendRecoveryCommand(command: string): Promise<{ success: b
 // --- Flash Firmware ---
 
 export async function flashFirmware(filePath: string): Promise<FlashProgress> {
-  return new Promise((resolve) => {
-    const nativePath = getNativePath();
-    const restore = path.join(nativePath, "libimobiledevice", "idevicerestore.exe");
+  let resolvedFirmwarePath: string;
+  try {
+    resolvedFirmwarePath = validateIpswPath(filePath);
+  } catch (error: any) {
+    return {
+      success: false,
+      progress: 0,
+      stage: error.message || "Chemin firmware invalide",
+      speed: "",
+    };
+  }
 
-    const child = spawn(`"${restore}"`, ["-e", `"${filePath}"`], {
-      shell: true,
+  const nativePath = getNativePath();
+  const restore = path.join(nativePath, "libimobiledevice", "idevicerestore.exe");
+
+  if (!fs.existsSync(restore)) {
+    return {
+      success: false,
+      progress: 0,
+      stage: "Binaire idevicerestore.exe introuvable dans native/libimobiledevice/",
+      speed: "",
+    };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let state = {
+      progress: 0,
+      stage: "Initialisation...",
+      speed: "",
+    };
+
+    const child = spawn(restore, ["-e", resolvedFirmwarePath], {
+      shell: false,
       windowsHide: true,
     });
 
-    let progress = 0;
-    let stage = "Initialisation...";
-    let speed = "";
+    const finalize = (result: FlashProgress) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      child.stdout?.removeAllListeners();
+      child.stderr?.removeAllListeners();
+      child.removeAllListeners();
+      resolve(result);
+    };
 
     child.stdout?.on("data", (data: Buffer) => {
-      const output = data.toString();
-
-      // Parser la progression depuis la sortie de idevicerestore
-      if (output.includes("Restoring")) {
-        stage = "Restauration en cours...";
-        const match = output.match(/(\d+)%/);
-        if (match) {
-          progress = parseInt(match[1]);
-        }
-      }
-      if (output.includes("Flashing")) {
-        stage = "Flash firmware...";
-        const match = output.match(/(\d+)%/);
-        if (match) {
-          progress = parseInt(match[1]);
-        }
-      }
-      if (output.includes("Verifying")) {
-        stage = "Vérification...";
-      }
+      state = parseRestoreOutput(data.toString(), state);
     });
 
     child.stderr?.on("data", (data: Buffer) => {
-      const output = data.toString();
-      const match = output.match(/(\d+\.\d+)\s+MB\/s/);
-      if (match) {
-        speed = `${match[1]} MB/s`;
-      }
+      state = parseRestoreOutput(data.toString(), state);
     });
 
-    child.on("close", (code) => {
-      resolve({
-        success: code === 0,
-        progress: 100,
-        stage: code === 0 ? "Terminé" : "Échec du flash",
-        speed,
+    child.on("error", (err: Error) => {
+      finalize({
+        success: false,
+        progress: state.progress,
+        stage: `Erreur d'exécution: ${err.message}`,
+        speed: state.speed,
       });
     });
 
-    // Timeout de sécurité
-    setTimeout(() => {
-      if (!child.killed) {
-        child.kill();
-        resolve({
+    child.on("close", (code) => {
+      const ok = code === 0;
+      finalize({
+        success: ok,
+        progress: ok ? 100 : state.progress,
+        stage: ok ? "Terminé" : `Échec du flash (code ${code ?? "inconnu"})`,
+        speed: state.speed,
+      });
+    });
+
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        if (!child.killed) {
+          child.kill();
+        }
+        finalize({
           success: false,
-          progress,
+          progress: state.progress,
           stage: "Timeout — opération annulée",
-          speed,
+          speed: state.speed,
         });
       }
     }, 1800000); // 30 minutes max
@@ -339,20 +514,36 @@ export async function getDeviceInfo(): Promise<any | null> {
   try {
     const nativePath = getNativePath();
     const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-    const result = execSync(`"${ideviceinfo}" -q com.apple.disk_usage -q com.apple.mobile.battery`, {
-      timeout: 10000,
-      encoding: "utf-8",
-    });
+    if (!fs.existsSync(ideviceinfo)) {
+      return null;
+    }
 
-    const batteryLevel = parseInt(result.match(/CurrentCapacity: (\d+)/)?.[1] || "0");
+    const result = execFileSync(
+      ideviceinfo,
+      ["-q", "com.apple.disk_usage", "-q", "com.apple.mobile.battery"],
+      {
+        timeout: 10000,
+        encoding: "utf-8",
+        windowsHide: true,
+      }
+    );
+
+    const batteryLevel = parseInt(result.match(/CurrentCapacity: (\d+)/)?.[1] || "0", 10);
     const storageTotal = result.match(/TotalDiskCapacity: (\d+)/)?.[1] || "0";
     const storageFree = result.match(/TotalDataCapacity: (\d+)/)?.[1] || "0";
-    const totalBytes = parseInt(storageTotal);
-    const freeBytes = parseInt(storageFree);
-    const usedBytes = totalBytes - freeBytes;
+    const totalBytes = parseInt(storageTotal, 10);
+    const freeBytes = parseInt(storageFree, 10);
+    const usedBytes = Math.max(0, totalBytes - freeBytes);
 
-    const ideviceinfo2 = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-    const infoResult = execSync(`"${ideviceinfo2}"`, { timeout: 10000, encoding: "utf-8" });
+    const infoResult = execFileSync(ideviceinfo, [], {
+      timeout: 10000,
+      encoding: "utf-8",
+      windowsHide: true,
+    });
+
+    const activation = await getActivationLockStatus();
+    const jbStatus = await checkJailbreakState();
+    const ecid = await getECID();
 
     return {
       serial: infoResult.match(/SerialNumber: (.+)/)?.[1]?.trim() || null,
@@ -364,12 +555,13 @@ export async function getDeviceInfo(): Promise<any | null> {
       batteryHealth: null,
       storageUsed: `${(usedBytes / 1073741824).toFixed(1)} GB`,
       storageTotal: `${(totalBytes / 1073741824).toFixed(0)} GB`,
-      jailbreakStatus: false,
-      activationLockStatus: null,
+      jailbreakStatus: jbStatus === "yes",
+      jailbreakState: jbStatus,
+      activationLockStatus: activation.state,
       connectionType: "usb",
-      ecid: null,
+      ecid,
       ibootVersion: infoResult.match(/iBootVersion: (.+)/)?.[1]?.trim() || null,
-      chipset: null,
+      chipset: infoResult.match(/HardwarePlatform: (.+)/)?.[1]?.trim() || null,
       boardConfig: infoResult.match(/BoardId: (.+)/)?.[1]?.trim() || null,
       basebandVersion: infoResult.match(/BasebandVersion: (.+)/)?.[1]?.trim() || null,
     };
@@ -384,9 +576,14 @@ export async function getECID(): Promise<string | null> {
   try {
     const nativePath = getNativePath();
     const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-    const result = execSync(`"${ideviceinfo}" -q com.apple.mobile.lockdown`, {
+    if (!fs.existsSync(ideviceinfo)) {
+      return null;
+    }
+
+    const result = execFileSync(ideviceinfo, ["-q", "com.apple.mobile.lockdown"], {
       timeout: 10000,
       encoding: "utf-8",
+      windowsHide: true,
     });
     const ecid = result.match(/UniqueDeviceID: (.+)/)?.[1]?.trim() || null;
     return ecid;
@@ -395,42 +592,85 @@ export async function getECID(): Promise<string | null> {
   }
 }
 
-// --- Activation Lock ---
+// --- Activation Lock (Fail-Closed) ---
 
-export async function getActivationLockStatus(): Promise<{ locked: boolean; account: string | null }> {
+export async function getActivationLockStatus(): Promise<ActivationLockStatusResult> {
+  const nativePath = getNativePath();
+  const ideviceactivation = path.join(nativePath, "libimobiledevice", "ideviceactivation.exe");
+
+  if (!fs.existsSync(ideviceactivation)) {
+    return {
+      state: "unavailable",
+      locked: null,
+      account: null,
+      message: "Statut inconnu — opération sensible bloquée (binaire ideviceactivation absent)",
+    };
+  }
+
   try {
-    const nativePath = getNativePath();
-    const ideviceactivation = path.join(nativePath, "libimobiledevice", "ideviceactivation.exe");
-    const result = execSync(`"${ideviceactivation}" state`, {
+    const result = execFileSync(ideviceactivation, ["state"], {
       timeout: 10000,
       encoding: "utf-8",
+      windowsHide: true,
     });
 
-    const isActivated = !result.includes("Unactivated");
+    if (/Unactivated|ActivationLock/i.test(result)) {
+      return {
+        state: "locked",
+        locked: true,
+        account: null,
+        message: "Verrouillage d'activation actif ou appareil non activé",
+      };
+    }
+
+    if (/Activated/i.test(result)) {
+      return {
+        state: "unlocked",
+        locked: false,
+        account: null,
+      };
+    }
+
     return {
-      locked: !isActivated,
+      state: "unknown",
+      locked: null,
       account: null,
+      message: "Statut inconnu — opération sensible bloquée",
     };
   } catch {
-    return { locked: false, account: null };
+    return {
+      state: "unknown",
+      locked: null,
+      account: null,
+      message: "Statut inconnu — opération sensible bloquée",
+    };
   }
 }
 
 // --- Jailbreak Check ---
 
-export async function checkJailbreakStatus(): Promise<boolean> {
+export async function checkJailbreakState(): Promise<JailbreakState> {
+  const nativePath = getNativePath();
+  const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
+
+  if (!fs.existsSync(ideviceinfo)) {
+    return "not-checked";
+  }
+
   try {
-    const nativePath = getNativePath();
-    const ideviceinfo = path.join(nativePath, "libimobiledevice", "ideviceinfo.exe");
-    const result = execSync(`"${ideviceinfo}" -q com.apple.mobile.iTunes`, {
+    const result = execFileSync(ideviceinfo, ["-q", "com.apple.mobile.iTunes"], {
       timeout: 10000,
       encoding: "utf-8",
+      windowsHide: true,
     });
-    // Vérifier la présence de fichiers jailbreak
-    return result.includes("Cydia") || result.includes("Sileo");
+    return /Cydia|Sileo|Zebra/i.test(result) ? "yes" : "no";
   } catch {
-    return false;
+    return "unknown";
   }
+}
+
+export async function checkJailbreakStatus(): Promise<boolean> {
+  return (await checkJailbreakState()) === "yes";
 }
 
 // --- Install libimobiledevice ---
@@ -439,19 +679,27 @@ export async function installLibimobiledevice(): Promise<{ success: boolean; mes
   const nativePath = getNativePath();
   const libimobiledevicePath = path.join(nativePath, "libimobiledevice");
 
-  if (!fs.existsSync(nativePath)) {
-    fs.mkdirSync(nativePath, { recursive: true });
+  if (isLibimobiledeviceInstalled(nativePath)) {
+    return {
+      success: true,
+      message: `libimobiledevice est déjà présent dans ${libimobiledevicePath}`,
+    };
   }
 
-  // Télécharger et extraire libimobiledevice pour Windows
+  if (!fs.existsSync(libimobiledevicePath)) {
+    fs.mkdirSync(libimobiledevicePath, { recursive: true });
+  }
+
   try {
     const axios = require("axios");
-    const url = "https://github.com/libimobiledevice-win32/imobiledevice-runnning/releases/latest/download/imobiledevice-tools.zip";
+    const url =
+      "https://github.com/libimobiledevice-win32/imobiledevice-net/releases/latest/download/libimobiledevice.1.2.1-r1122-win-x64.zip";
 
     const response = await axios({
       url,
       method: "GET",
       responseType: "stream",
+      timeout: 30000,
     });
 
     const zipPath = path.join(nativePath, "imobiledevice.zip");
@@ -463,16 +711,15 @@ export async function installLibimobiledevice(): Promise<{ success: boolean; mes
       writer.on("error", reject);
     });
 
-    // Extraire le ZIP (nécessite une dépendance)
-    // Pour l'instant, on retourne les instructions
     return {
-      success: true,
-      message: "Téléchargé. Extrayez manuellement dans native/libimobiledevice/",
+      success: false,
+      message:
+        "Archive téléchargée dans native/imobiledevice.zip. Extrayez les binaires (.exe et .dll) dans native/libimobiledevice/ pour activer le backend natif.",
     };
   } catch (error: any) {
     return {
       success: false,
-      message: `Échec du téléchargement: ${error.message}\n\nTéléchargez manuellement depuis: https://github.com/libimobiledevice-win32`,
+      message: `Backend natif absent (${error.message}). Placez les binaires officiels (ideviceinfo.exe, irecovery.exe, idevicerestore.exe, idevice_id.exe, ideviceactivation.exe) dans native/libimobiledevice/.`,
     };
   }
 }

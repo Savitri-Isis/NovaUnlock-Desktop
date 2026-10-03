@@ -15,6 +15,14 @@ function InfoCard({ label, value }: InfoRow) {
   );
 }
 
+function formatJailbreakLabel(state?: string, fallbackBool?: boolean): string {
+  if (state === "yes") return "Oui";
+  if (state === "no") return "Non";
+  if (state === "unknown") return "Inconnu";
+  if (state === "not-checked") return "Non vérifié";
+  return fallbackBool ? "Oui" : "Non";
+}
+
 export default function DeviceInfo() {
   const deviceInfo = useDeviceStore((s) => s.deviceInfo);
   const connection = useDeviceStore((s) => s.connection);
@@ -29,8 +37,8 @@ export default function DeviceInfo() {
     { label: "Santé batterie", value: deviceInfo.batteryHealth || "N/A" },
     { label: "Stockage utilisé", value: deviceInfo.storageUsed || "N/A" },
     { label: "Stockage total", value: deviceInfo.storageTotal || "N/A" },
-    { label: "Jailbreak", value: deviceInfo.jailbreakStatus ? "Oui" : "Non" },
-    { label: "Activation Lock", value: deviceInfo.activationLockStatus || "N/A" },
+    { label: "Jailbreak", value: formatJailbreakLabel(deviceInfo.jailbreakState, deviceInfo.jailbreakStatus) },
+    { label: "Activation Lock", value: deviceInfo.activationLockStatus || "Inconnu" },
     { label: "Type de connexion", value: deviceInfo.connectionType ? "USB" : "Aucune" },
     { label: "Mode actuel", value: connection.currentMode.toUpperCase() },
     { label: "ECID", value: deviceInfo.ecid || "N/A" },

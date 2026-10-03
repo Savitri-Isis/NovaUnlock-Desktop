@@ -28,6 +28,7 @@ export interface DeviceDetails {
   storageUsed: string | null;
   storageTotal: string | null;
   jailbreakStatus: boolean;
+  jailbreakState?: "yes" | "no" | "unknown" | "not-checked";
   activationLockStatus: string | null;
   connectionType: string | null;
   ecid: string | null;
@@ -37,8 +38,17 @@ export interface DeviceDetails {
   basebandVersion: string | null;
 }
 
+export interface ActivationLockStatus {
+  state?: "locked" | "unlocked" | "unknown" | "unavailable";
+  locked: boolean | null;
+  account: string | null;
+  message?: string;
+}
+
 export type USBChannel = {
   scanDevices: () => Promise<DeviceInfo | null>;
+  scanAllDevices?: () => Promise<DeviceInfo[]>;
+  checkLibimobiledevice?: () => Promise<boolean>;
   connectDevice: (deviceId: number) => Promise<boolean>;
   disconnectDevice: (deviceId: number) => Promise<boolean>;
   sendDFUCommand: (command: string, args: string) => Promise<{ success: boolean; response?: string }>;
@@ -46,13 +56,39 @@ export type USBChannel = {
   flashFirmware: (filePath: string) => Promise<{ success: boolean; progress: number; stage: string; speed: string }>;
   getDeviceInfo: () => Promise<DeviceDetails | null>;
   getECID: () => Promise<string | null>;
-  getActivationLockStatus: () => Promise<{ locked: boolean; account: string | null }>;
+  getActivationLockStatus: () => Promise<ActivationLockStatus>;
   checkJailbreakStatus: () => Promise<boolean>;
   installLibimobiledevice: () => Promise<{ success: boolean; message: string }>;
-  listBackups: () => Promise<Array<{ path: string; name: string; productType: string; iosVersion: string; encrypted: boolean; sizeMb: number; modifiedAt: string }>>;
+  listBackups: () => Promise<
+    Array<{
+      path: string;
+      name: string;
+      productType: string;
+      iosVersion: string;
+      encrypted: boolean;
+      sizeMb: number;
+      modifiedAt: string;
+    }>
+  >;
   downloadFirmware: (url: string, buildId: string) => Promise<string>;
-  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => Promise<{
-    task: string; ok: boolean; dryRun: true; blockers: string[]; warnings: string[]; steps: string[]; activationLockNotice: string; backupCount: number; diskFreeGb: number;
+  preflight: (
+    task: string,
+    device: {
+      modelIdentifier?: string | null;
+      serial?: string | null;
+      mode?: string;
+      activationLockStatus?: string | null;
+    }
+  ) => Promise<{
+    task: string;
+    ok: boolean;
+    dryRun: true;
+    blockers: string[];
+    warnings: string[];
+    steps: string[];
+    activationLockNotice: string;
+    backupCount: number;
+    diskFreeGb: number;
   }>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
 };
@@ -60,6 +96,12 @@ export type USBChannel = {
 contextBridge.exposeInMainWorld("novaunlock", {
   scanDevices: (): Promise<DeviceInfo | null> =>
     ipcRenderer.invoke("usb:scan"),
+
+  scanAllDevices: (): Promise<DeviceInfo[]> =>
+    ipcRenderer.invoke("usb:scan-all"),
+
+  checkLibimobiledevice: (): Promise<boolean> =>
+    ipcRenderer.invoke("usb:check-libimobiledevice"),
 
   connectDevice: (deviceId: number): Promise<boolean> =>
     ipcRenderer.invoke("usb:connect", deviceId),
@@ -82,7 +124,7 @@ contextBridge.exposeInMainWorld("novaunlock", {
   getECID: (): Promise<string | null> =>
     ipcRenderer.invoke("usb:get-ecid"),
 
-  getActivationLockStatus: (): Promise<{ locked: boolean; account: string | null }> =>
+  getActivationLockStatus: (): Promise<ActivationLockStatus> =>
     ipcRenderer.invoke("usb:get-activation-lock"),
 
   checkJailbreakStatus: (): Promise<boolean> =>
@@ -90,11 +132,21 @@ contextBridge.exposeInMainWorld("novaunlock", {
 
   installLibimobiledevice: (): Promise<{ success: boolean; message: string }> =>
     ipcRenderer.invoke("usb:install-libimobiledevice"),
+
   listBackups: () => ipcRenderer.invoke("master:backups"),
-  downloadFirmware: (url: string, buildId: string) => ipcRenderer.invoke("master:download-firmware", url, buildId),
-  preflight: (task: string, device: { modelIdentifier?: string | null; serial?: string | null; mode?: string; activationLockStatus?: string | null }) => ipcRenderer.invoke("master:preflight", task, device),
-  appendAudit: (task: string, deviceId: string, event: string) => ipcRenderer.invoke("master:audit", task, deviceId, event),
+  downloadFirmware: (url: string, buildId: string) =>
+    ipcRenderer.invoke("master:download-firmware", url, buildId),
+  preflight: (
+    task: string,
+    device: {
+      modelIdentifier?: string | null;
+      serial?: string | null;
+      mode?: string;
+      activationLockStatus?: string | null;
+    }
+  ) => ipcRenderer.invoke("master:preflight", task, device),
+  appendAudit: (task: string, deviceId: string, event: string) =>
+    ipcRenderer.invoke("master:audit", task, deviceId, event),
 });
 
-// Type declarations pour le renderer
 export type ElectronAPI = USBChannel;
