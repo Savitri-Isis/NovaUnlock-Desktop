@@ -5,10 +5,13 @@ node_modules/
 dist/
 release/
 
-# Native binaries (downloaded separately; keep directory structure & READMEs tracked)
+# Native Windows payloads and local source-build artifacts are not committed by default.
+# Use the tracked source lockfile and build script, or stage a separately approved package.
 native/**/*.exe
 native/**/*.dll
 native/**/*.zip
+native/libimobiledevice/NOTICE.txt
+.native-build/
 
 # IDE
 .vscode/

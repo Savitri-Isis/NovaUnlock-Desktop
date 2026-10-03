@@ -188,3 +188,31 @@ describe("Préparation native avant construction", () => {
     expect(fs.existsSync(path.join(root, "native"))).toBe(false);
   });
 });
+
+describe("Sources natives Windows", () => {
+  it("verrouille les projets amont sur des commits complets et uniques", () => {
+    const lockPath = path.resolve("scripts/native-sources.lock");
+    const entries = fs
+      .readFileSync(lockPath, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => line.split(/\s+/));
+    const projects = entries.map(([project]) => project);
+    const commits = entries.map(([, , commit]) => commit);
+
+    expect(projects).toEqual([
+      "libplist",
+      "libimobiledevice-glue",
+      "libtatsu",
+      "libusbmuxd",
+      "libimobiledevice",
+      "libirecovery",
+      "libideviceactivation",
+      "idevicerestore",
+    ]);
+    expect(entries.every((entry) => entry.length === 3)).toBe(true);
+    expect(commits.every((commit) => /^[0-9a-f]{40}$/.test(commit))).toBe(true);
+    expect(new Set(commits).size).toBe(commits.length);
+  });
+});

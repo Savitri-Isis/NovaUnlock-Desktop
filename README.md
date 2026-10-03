@@ -32,15 +32,28 @@ NovaUnlock Desktop
 - Pour compiler : Node.js **x64**, branche **22 à partir de 22.22.2** ou **24 à partir de 24.15.0** (versions compatibles avec les dépendances verrouillées ; Node 18 n’est plus suffisant). Node.js n’est pas nécessaire pour utiliser l’application déjà installée.
 - Un câble USB compatible
 - Apple Devices ou iTunes / Apple Mobile Device USB Driver pour l'appairage en mode Normal
-- Un paquet **Windows x64** complet de `libimobiledevice` (exécutables **et** DLL) pour le build final ou les opérations USB avancées
+- Pour un installateur complet : les outils natifs Windows x64 de `libimobiledevice` (exécutables **et** DLL compatibles). Ils peuvent être compilés depuis les sources avec la procédure ci-dessous ; aucun iPhone n’est nécessaire pour cette étape.
+
+### Construire les outils natifs depuis les sources officielles (Windows)
+
+Si vous ne disposez pas déjà d’un paquet natif de confiance, vous n’avez pas à assembler manuellement les `.exe` et DLL : le dépôt contient un constructeur MSYS2, suivant la méthode de compilation Windows décrite par le projet [libimobiledevice](https://libimobiledevice.org/#get-started-windows-source). Il récupère des versions amont épinglées dans [`scripts/native-sources.lock`](scripts/native-sources.lock), vérifie les identifiants de commit, compile les projets dans MSYS2 UCRT64, collecte les DLL d’exécution requises et génère les notices/licences.
+
+1. Installez **MSYS2 x64** depuis [msys2.org](https://www.msys2.org/) (installation par défaut : `C:\msys64`).
+2. Dans **MSYS2 UCRT64**, mettez MSYS2 à jour avec `pacman -Syu`. Si le terminal se ferme, rouvrez-le et relancez la mise à jour jusqu’à ce qu’elle soit terminée.
+3. Dans l’Explorateur Windows, double-cliquez sur **`Construire-outils-libimobiledevice-Windows.cmd`** et gardez la fenêtre ouverte. Une connexion Internet est nécessaire pour les paquets de compilation et les sources amont.
+4. Après le message de réussite, double-cliquez sur **`Creer-installateur-Windows.cmd`** pour construire l’application et son installateur.
+
+Le script ne télécharge pas d’exécutables `libimobiledevice` précompilés et ne lance aucune commande sur un appareil. Il place le payload local dans `native/libimobiledevice` et les journaux d’échec dans `.native-build/logs`; les binaires natifs et l’avis généré sont ignorés par Git par défaut. Les sources sont compilées sur le PC Windows et ne sont pas vérifiées matériellement dans le sandbox.
+
+Si MSYS2 est installé ailleurs que `C:\msys64`, définissez `MSYS2_ROOT` sur son dossier avant de lancer le fichier `.cmd`.
 
 ### Créer l’installateur sans saisir de commandes (Windows)
 
 1. Récupérez le **projet complet** sur votre PC, par exemple dans `C:\Users\hp\NovaUnlock-Desktop`. Ne déplacez pas le lanceur seul.
 2. Installez une version compatible de **Node.js x64** depuis [nodejs.org](https://nodejs.org), si nécessaire.
-3. Obtenez un paquet **libimobiledevice Windows x64 de confiance**, avec ses DLL et ses licences, puis extrayez-le. L’assistant ne télécharge pas ces binaires.
+3. Préparez les outils natifs : construisez-les avec `Construire-outils-libimobiledevice-Windows.cmd` (section précédente), ou obtenez un paquet Windows x64 de confiance avec toutes ses DLL et licences.
 4. Dans l’Explorateur Windows, double-cliquez sur **`Creer-installateur-Windows.cmd`**.
-5. Choisissez le dossier extrait quand le sélecteur s’ouvre, puis gardez la fenêtre ouverte jusqu’à la fin.
+5. Si vous utilisez un paquet déjà extrait, choisissez son dossier lorsque le sélecteur s’ouvre ; si le constructeur MSYS2 a préparé `native/libimobiledevice`, aucun sélecteur n’est nécessaire. Gardez la fenêtre ouverte jusqu’à la fin.
 
 Le lanceur se place lui-même dans le dossier du projet, contrôle Node/npm, prépare et vérifie les fichiers natifs, installe les dépendances verrouillées avec `npm ci --include=dev`, puis lance `package:win`. Il s’arrête à la première erreur. La fenêtre reste ouverte pour lire les messages ; en cas d’annulation du sélecteur, aucune copie, installation de dépendances ou compilation n’est lancée.
 
@@ -74,7 +87,14 @@ npm run verify:native
 npm run package:win
 ```
 
-Les commandes de packaging lancent déjà `verify:native` : elles échouent volontairement si `ideviceinfo.exe`, `idevice_id.exe`, `ideviceactivation.exe`, `idevicebackup2.exe`, `idevicerestore.exe`, `irecovery.exe` ou les DLL associées sont absents. Voir [`native/libimobiledevice/README.md`](native/libimobiledevice/README.md).
+Pour une archive ZIP complète fournie par une source approuvée, le dépôt fournit également un préparateur local (aucun téléchargement ni exécution des fichiers importés) :
+
+```powershell
+npm run prepare:native:archive -- "C:\chemin\vers\libimobiledevice-win-x64.zip"
+npm run verify:native
+```
+
+Le préparateur vérifie la présence des six exécutables requis et des DLL, copie le payload et génère un manifeste SHA-256 local. Ce manifeste n’atteste pas l’authenticité du paquet : vérifiez sa provenance et ses licences avant emploi. Les commandes de packaging lancent déjà `verify:native` et échouent si un outil ou les DLL associées sont absents. Voir [`native/libimobiledevice/README.md`](native/libimobiledevice/README.md).
 
 Un utilisateur d’une application déjà installée choisit le dossier extrait depuis **Connexion USB → Assistant de configuration → Configurer automatiquement** (également disponible dans **Paramètres**). Le payload est copié dans son répertoire utilisateur, sans écriture dans `Program Files`.
 
