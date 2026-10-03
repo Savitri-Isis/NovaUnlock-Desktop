@@ -28,6 +28,7 @@ NovaUnlock Desktop
 ## Prérequis
 
 - Windows 10/11 x64
+- Pour l’installation et l’utilisation de l’application déjà construite, voir [`INSTALLATION_WINDOWS.md`](INSTALLATION_WINDOWS.md).
 - Pour compiler : Node.js **x64**, branche **22 à partir de 22.22.2** ou **24 à partir de 24.15.0** (versions compatibles avec les dépendances verrouillées ; Node 18 n’est plus suffisant). Node.js n’est pas nécessaire pour utiliser l’application déjà installée.
 - Un câble USB compatible
 - Apple Devices ou iTunes / Apple Mobile Device USB Driver pour l'appairage en mode Normal
@@ -86,7 +87,14 @@ npm run verify:native
 npm run package:win
 ```
 
-Les commandes de packaging lancent déjà `verify:native` : elles échouent volontairement si `ideviceinfo.exe`, `idevice_id.exe`, `ideviceactivation.exe`, `idevicebackup2.exe`, `idevicerestore.exe`, `irecovery.exe` ou les DLL associées sont absents. Voir [`native/libimobiledevice/README.md`](native/libimobiledevice/README.md).
+Pour une archive ZIP complète fournie par une source approuvée, le dépôt fournit également un préparateur local (aucun téléchargement ni exécution des fichiers importés) :
+
+```powershell
+npm run prepare:native:archive -- "C:\chemin\vers\libimobiledevice-win-x64.zip"
+npm run verify:native
+```
+
+Le préparateur vérifie la présence des six exécutables requis et des DLL, copie le payload et génère un manifeste SHA-256 local. Ce manifeste n’atteste pas l’authenticité du paquet : vérifiez sa provenance et ses licences avant emploi. Les commandes de packaging lancent déjà `verify:native` et échouent si un outil ou les DLL associées sont absents. Voir [`native/libimobiledevice/README.md`](native/libimobiledevice/README.md).
 
 Un utilisateur d’une application déjà installée choisit le dossier extrait depuis **Connexion USB → Assistant de configuration → Configurer automatiquement** (également disponible dans **Paramètres**). Le payload est copié dans son répertoire utilisateur, sans écriture dans `Program Files`.
 
