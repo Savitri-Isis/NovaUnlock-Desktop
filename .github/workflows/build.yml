@@ -147,26 +147,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          log=".native-build/compilation-native.log"
-          if [[ ! -s "$log" ]]; then
-            echo "::error::Compilation native interrompue avant la première ligne de journal."
-            exit 0
-          fi
-          publier() {
-            # % s'échappe en premier, %0A encode le retour à la ligne d'une
-            # annotation et chaque ligne est tronquée pour rester dans les
-            # limites de l'API.
-            local corps
-            corps="$(cut -c1-400 | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')"
-            echo "::error::$1%0A${corps}"
-          }
-          # Un make parallèle noie l'erreur sous les avertissements des fichiers
-          # compilés ensuite : elle est extraite du journal complet, pas de sa fin.
-          erreurs="$(grep -nE "error:|\*\*\* |Error [0-9]+" "$log" | head -n 25 || true)"
-          if [[ -n "$erreurs" ]]; then
-            printf '%s\n' "$erreurs" | publier "Compilation native — lignes d'erreur :"
-          fi
-          tail -n 25 "$log" | publier "Compilation native — 25 dernières lignes :"
+          bash scripts/publish-failure-annotation.sh \
+            .native-build/compilation-native.log \
+            "error:|\*\*\* |Error [0-9]+" \
+            "Compilation native — lignes d'erreur :"
 
       - name: Conserver les journaux de compilation en cas d'échec
         if: failure()
@@ -223,8 +207,22 @@ jobs:
       - name: Installer les dépendances verrouillées
         run: npm ci --include=dev
 
+      # La sortie est conservée : un test qui n'échoue que sur Windows ne se
+      # diagnostique pas depuis les journaux bruts, inaccessibles par API.
       - name: Tests unitaires sur Windows
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee tests-windows.log
+
+      - name: Publier les tests en échec en annotation
+        if: failure()
+        shell: bash
+        run: |
+          bash scripts/publish-failure-annotation.sh \
+            tests-windows.log \
+            "FAIL|AssertionError|Error:|expected|Tests  " \
+            "Tests Windows — échecs :"
 
       # package:win exécute verify:native, compile l'interface et le processus
       # principal, puis electron-builder (cibles nsis et portable de package.json).

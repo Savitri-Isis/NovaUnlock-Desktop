@@ -25,6 +25,7 @@ function readNormalized(...segments: string[]): string {
 
 const workflow = readNormalized(".github", "workflows", "build.yml");
 const nativeBuilder = readNormalized("scripts", "build-native-msys2.sh");
+const annotationPublisher = readNormalized("scripts", "publish-failure-annotation.sh");
 const manifest = JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8")) as {
   version: string;
   engines: { node: string };
@@ -156,17 +157,25 @@ describe("Chaîne de construction GitHub Actions", () => {
       /bash scripts\/build-native-msys2\.sh 2>&1 \| tee \.native-build\/compilation-native\.log/
     );
     // Les annotations sont exposées par l'API check-runs, contrairement aux journaux
-    // bruts : la fin du journal doit y être publiée, et l'artefact ne doit plus
-    // « ignorer » silencieusement un dossier vide.
-    expect(native).toMatch(/::error::Compilation native interrompue/);
+    // bruts et aux artefacts : l'échec doit y être publié, et l'artefact ne doit
+    // plus « ignorer » silencieusement un dossier vide.
+    expect(native).toMatch(/publish-failure-annotation\.sh/);
     expect(native).toMatch(/if-no-files-found: warn/);
     expect(native).not.toMatch(/if-no-files-found: ignore/);
     expect(native).toMatch(/\.native-build\/logs\n\s*\.native-build\/compilation-native\.log/);
     // Un make parallèle noie l'erreur sous les avertissements des fichiers compilés
     // ensuite : elle doit être extraite du journal complet, et non de sa seule fin.
-    expect(native).toMatch(/grep -nE "error:/);
+    expect(annotationPublisher).toMatch(/grep -nE "\$pattern" "\$log"/);
     expect(nativeBuilder).toMatch(/show_log_failure "\$build_log"/);
     expect(nativeBuilder).not.toMatch(/tail -n 80/);
+  });
+
+  it("conserve la sortie des tests Windows pour diagnostiquer un échec", () => {
+    // Ces tests passent sur ubuntu et en local ; un échec uniquement Windows ne
+    // se lit ni dans les journaux bruts ni dans les artefacts.
+    const installer = jobBlock("installateur");
+    expect(installer).toMatch(/npm test 2>&1 \| tee tests-windows\.log/);
+    expect(installer).toMatch(/publish-failure-annotation\.sh/);
   });
 
   it("transmet le payload natif vérifié entre les deux travaux Windows", () => {
