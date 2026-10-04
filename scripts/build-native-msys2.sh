@@ -148,7 +148,13 @@ build_component() {
     # The pinned 1.0.0 release joins -O2 and -DWIN32 in configure.ac, omits
     # <sys/stat.h> on WIN32 (stat/struct stat used by src/idevicerestore.c) and
     # links src/socket.c without ws2_32.
-    patch_suffixes=(win32-cflags win32-stat win32-libs)
+    #
+    # It also calls irecv_init(), which no longer exists in the pinned
+    # libirecovery 1.3.1 public API: the library self-initializes through a
+    # constructor (INITIALIZER(_irecv_init)) and does not export the symbol.
+    # GCC 14, shipped by MSYS2 UCRT64, turns the resulting implicit declaration
+    # into a hard error, so the three leftover calls are dropped.
+    patch_suffixes=(win32-cflags win32-stat win32-libs libirecovery-init)
   fi
   local patch_suffix source_patch
   for patch_suffix in "${patch_suffixes[@]}"; do
