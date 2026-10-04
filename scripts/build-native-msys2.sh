@@ -108,6 +108,18 @@ done < "$LOCK_FILE"
 jobs="$(nproc 2>/dev/null || printf '2')"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
 
+# Un make parallèle (-j) interleave la sortie : l'erreur réelle se retrouve souvent
+# noyée sous les avertissements des fichiers compilés ensuite, bien au-delà de la
+# fin du journal. Les lignes d'erreur sont donc extraites du journal complet,
+# puis la fin est affichée pour situer le composant et la cible.
+show_log_failure() {
+  local log="$1"
+  printf "\n--- lignes d'erreur extraites de %s ---\n" "${log##*/}" >&2
+  grep -nE "error:|\*\*\* |Error [0-9]+" "$log" | head -n 25 >&2 || true
+  printf -- '--- 40 dernières lignes de %s ---\n' "${log##*/}" >&2
+  tail -n 40 "$log" >&2 || true
+}
+
 build_component() {
   local project="$1"
   local source_dir="$SOURCE_ROOT/$project"
@@ -153,15 +165,15 @@ build_component() {
 
   printf '\nCompilation de %s...\n' "$project"
   if ! (cd "$source_dir" && ./autogen.sh "${configure_args[@]}") >"$configure_log" 2>&1; then
-    tail -n 80 "$configure_log" >&2 || true
+    show_log_failure "$configure_log"
     fail "Configuration de $project échouée."
   fi
   if ! (cd "$source_dir" && make V=1 -j"$jobs") >"$build_log" 2>&1; then
-    tail -n 80 "$build_log" >&2 || true
+    show_log_failure "$build_log"
     fail "Compilation de $project échouée."
   fi
   if ! (cd "$source_dir" && make install) >"$install_log" 2>&1; then
-    tail -n 80 "$install_log" >&2 || true
+    show_log_failure "$install_log"
     fail "Installation locale de $project échouée."
   fi
 }

@@ -140,10 +140,10 @@ jobs:
         run: node scripts/verify-native.cjs
 
       # Les journaux bruts d'un travail ne se téléchargent que depuis un navigateur.
-      # Les annotations, elles, sont exposées par l'API check-runs : publier la fin
-      # du journal en annotation rend l'échec lisible sans ouvrir l'interface ni
-      # récupérer l'artefact.
-      - name: Publier la fin du journal en annotation
+      # Les annotations, elles, sont exposées par l'API check-runs : publier les
+      # lignes d'erreur en annotation rend l'échec lisible sans ouvrir l'interface
+      # ni récupérer l'artefact.
+      - name: Publier les erreurs de compilation en annotation
         if: failure()
         shell: bash
         run: |
@@ -152,11 +152,21 @@ jobs:
             echo "::error::Compilation native interrompue avant la première ligne de journal."
             exit 0
           fi
-          # % s'échappe en premier, %0A encode le retour à la ligne d'une annotation
-          # et chaque ligne est tronquée pour rester dans les limites de l'API.
-          payload="$(tail -n 40 "$log" | cut -c1-400 | sed -e 's/%/%25/g' -e 's/\r//g' \
-            | awk '{printf "%s%%0A", $0}')"
-          echo "::error::Compilation native interrompue — 40 dernières lignes :%0A${payload}"
+          publier() {
+            # % s'échappe en premier, %0A encode le retour à la ligne d'une
+            # annotation et chaque ligne est tronquée pour rester dans les
+            # limites de l'API.
+            local corps
+            corps="$(cut -c1-400 | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error::$1%0A${corps}"
+          }
+          # Un make parallèle noie l'erreur sous les avertissements des fichiers
+          # compilés ensuite : elle est extraite du journal complet, pas de sa fin.
+          erreurs="$(grep -nE "error:|\*\*\* |Error [0-9]+" "$log" | head -n 25 || true)"
+          if [[ -n "$erreurs" ]]; then
+            printf '%s\n' "$erreurs" | publier "Compilation native — lignes d'erreur :"
+          fi
+          tail -n 25 "$log" | publier "Compilation native — 25 dernières lignes :"
 
       - name: Conserver les journaux de compilation en cas d'échec
         if: failure()

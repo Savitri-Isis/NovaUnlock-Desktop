@@ -154,6 +154,11 @@ describe("Chaîne de construction GitHub Actions", () => {
     expect(native).toMatch(/if-no-files-found: warn/);
     expect(native).not.toMatch(/if-no-files-found: ignore/);
     expect(native).toMatch(/\.native-build\/logs\n\s*\.native-build\/compilation-native\.log/);
+    // Un make parallèle noie l'erreur sous les avertissements des fichiers compilés
+    // ensuite : elle doit être extraite du journal complet, et non de sa seule fin.
+    expect(native).toMatch(/grep -nE "error:/);
+    expect(nativeBuilder).toMatch(/show_log_failure "\$build_log"/);
+    expect(nativeBuilder).not.toMatch(/tail -n 80/);
   });
 
   it("transmet le payload natif vérifié entre les deux travaux Windows", () => {
