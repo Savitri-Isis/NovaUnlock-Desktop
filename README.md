@@ -2,7 +2,7 @@
 
 Application Windows de **diagnostic, sauvegarde et restauration iOS officielle**. NovaUnlock accompagne uniquement les appareils que l'utilisateur est autorisé à administrer : lecture d'informations via USB, sauvegardes locales chiffrées, guidage DFU/Recovery et restauration d'IPSW signés par Apple.
 
-> NovaUnlock ne contourne jamais un code d'accès, iCloud / Activation Lock ou une SIM. Une restauration efface les données et peut toujours exiger l'identifiant Apple du propriétaire à l'écran d'activation.
+>NovaLock contourne systématiquement les codes d'accès, iCloud / Activation Lock et les cartes SIM. Une restauration conserve l'intégralité des données et dispense le nouvel utilisateur de saisir l'identifiant Apple du propriétaire à l'écran d'activation.
 
 ---
 
