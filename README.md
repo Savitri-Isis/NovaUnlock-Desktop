@@ -85,6 +85,38 @@ L’erreur `le dossier ne contient pas ideviceinfo.exe et idevice_id.exe` signif
 
 Une connexion Internet est nécessaire pour les dépendances npm et les composants de compilation téléchargés par Electron Builder. Aucun changement de la politique PowerShell ni installation automatique de Node.js ou de pilotes Apple n’est effectué. Ne lancez qu’une construction à la fois dans un même dossier.
 
+### Construire l’installateur `.exe` avec GitHub Actions (sans PC Windows)
+
+Le dépôt contient le workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) : GitHub met à disposition un « bâtisseur » Windows virtuel qui applique la même procédure que la section précédente, puis publie les fichiers `.exe`. Aucune installation locale de MSYS2, de Node.js ou d’Electron n’est alors nécessaire.
+
+1. Poussez le projet sur GitHub (dépôt `Savitri-Isis/NovaUnlock-Desktop`).
+2. Ouvrez l’onglet **Actions**, choisissez le workflow **Construire l’installateur Windows**, puis **Run workflow** (branche `main`).
+3. Attendez la fin des trois travaux : *Lint et tests unitaires* (Ubuntu, rapide), *Outils natifs libimobiledevice (MSYS2 UCRT64)* (compilation depuis les sources épinglées, la plus longue) et *Installateur et version portable (.exe)*.
+4. Téléchargez l’artefact **NovaUnlock-Windows-x64** en bas de la page de l’exécution : il contient `NovaUnlock-Setup-<version>-x64.exe`, `NovaUnlock-Portable-<version>-x64.exe` et `SHA256SUMS.txt` (conservé 30 jours).
+
+Pour obtenir en plus une **Release** (page de téléchargement permanente), créez une étiquette égale à la version de [`package.json`](package.json) :
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Le workflow refuse une étiquette qui ne correspond pas à `package.json` (`v1.0.1` pour une version `1.0.0`) au lieu de livrer des fichiers mal nommés : aucun fichier n’est publié dans ce cas. Une étiquette cohérente publie les deux `.exe` et `SHA256SUMS.txt` dans **Releases**.
+
+Le workflow reprend la procédure locale sans en retirer aucune garantie :
+
+- les outils `libimobiledevice` sont compilés par [`scripts/build-native-msys2.sh`](scripts/build-native-msys2.sh) dans MSYS2 UCRT64, depuis les versions et commits épinglés de [`scripts/native-sources.lock`](scripts/native-sources.lock), avec les correctifs de [`scripts/patches`](scripts/patches) ; **aucun exécutable `libimobiledevice` précompilé n’est téléchargé ni exécuté** ;
+- ce sont les commandes npm du dépôt qui s’exécutent : `npm ci --include=dev`, `npm test`, `npm run package:win` (`verify:native` compris), et les six outils natifs attendus sont vérifiés avant puis après le transfert du payload entre les deux travaux Windows ;
+- seules des actions épinglées à une version majeure sont utilisées (`actions/checkout@v7`, `actions/setup-node@v7`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`, `msys2/setup-msys2@v2`) ; le jeton GitHub reste en lecture seule partout, sauf pour la seule étape qui crée la Release.
+
+Précautions et limites :
+
+- les fichiers produits ne sont **pas signés** : Windows SmartScreen peut afficher un avertissement, et la provenance doit être vérifiée ; comparez l’empreinte du fichier téléchargé avec `SHA256SUMS.txt` avant d’installer ;
+- une **demande de fusion** ne lance que le lint et les tests : la compilation native dure plusieurs dizaines de minutes et n’est déclenchée que sur `main`, sur une étiquette ou à la demande ;
+- la **première** construction est la plus longue (huit projets amont compilés) ; le payload natif obtenu est ensuite mis en cache par GitHub sous une clé qui contient l’empreinte de [`scripts/native-sources.lock`](scripts/native-sources.lock) et des correctifs : une reconstruction à sources identiques ne recompile rien, alors qu’une modification des sources épinglées déclenche une recompilation complète, sans jamais réutiliser un binaire d’une autre version ;
+- en cas d’échec de la compilation native, les journaux sont conservés dans l’artefact `journaux-compilation-native` ;
+- les empreintes SHA-256 calculées par le bâtisseur GitHub ne remplacent pas la vérification d’authenticité : elles prouvent seulement que le fichier publié n’a pas été modifié depuis sa construction.
+
 ### Configurer les outils depuis l’application
 
 Dans **Paramètres** ou **Connexion USB**, l’**Assistant de configuration** contrôle automatiquement les fichiers disponibles. Cliquez sur **Configurer automatiquement**, puis sélectionnez le paquet extrait de confiance. La copie dans le répertoire utilisateur et la vérification finale s’enchaînent sans commandes, sans Node.js et sans modification de `Program Files`.
