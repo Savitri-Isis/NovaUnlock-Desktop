@@ -138,6 +138,15 @@ describe("Navigation React Router v7", () => {
     expect(screen.getByRole("heading", { name: "Mode DFU" })).toBeInTheDocument();
   });
 
+  it("ouvre l’assistant jailbreak sans lancer d’opération sur l’appareil", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: /Jailbreak/i }));
+    expect(window.location.pathname).toBe("/jailbreak");
+    expect(screen.getByRole("heading", { name: "Assistant jailbreak" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Lancement indisponible/i })).toBeDisabled();
+    expect(window.novaunlock.checkJailbreakStatus).not.toHaveBeenCalled();
+  });
+
   it("ouvre la page Recovery (/recovery)", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("link", { name: /Recovery/i }));
