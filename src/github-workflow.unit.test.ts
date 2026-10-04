@@ -128,9 +128,32 @@ describe("Chaîne de construction GitHub Actions", () => {
     expect(native).toMatch(/node scripts\/verify-native\.cjs/);
   });
 
-  it("réserve la compilation native aux envois, pas aux demandes de fusion", () => {
-    expect(jobBlock("outils-natifs")).toMatch(/if: github\.event_name != 'pull_request'/);
+  it("réserve la compilation native aux envois, sauf demande de fusion étiquetée", () => {
+    const native = jobBlock("outils-natifs");
+    // Par défaut une demande de fusion ne compile pas ; l'étiquette explicite
+    // « construction-native » est le seul levier qui l'autorise, pour reproduire un
+    // échec de compilation sans fusionner d'abord sur main.
+    expect(native).toMatch(
+      /if: github\.event_name != 'pull_request' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'construction-native'\)/
+    );
     expect(jobBlock("installateur")).toMatch(/needs: outils-natifs/);
+  });
+
+  it("conserve la sortie complète de la compilation et la rend lisible sur échec", () => {
+    const native = jobBlock("outils-natifs");
+    // Le script n'écrit des .log qu'à partir du premier autogen.sh : sans cette
+    // capture, un échec antérieur (paquetage MSYS2, clonage) ne laisse aucune trace.
+    expect(native).toMatch(/set -o pipefail/);
+    expect(native).toMatch(
+      /bash scripts\/build-native-msys2\.sh 2>&1 \| tee \.native-build\/compilation-native\.log/
+    );
+    // Les annotations sont exposées par l'API check-runs, contrairement aux journaux
+    // bruts : la fin du journal doit y être publiée, et l'artefact ne doit plus
+    // « ignorer » silencieusement un dossier vide.
+    expect(native).toMatch(/::error::Compilation native interrompue/);
+    expect(native).toMatch(/if-no-files-found: warn/);
+    expect(native).not.toMatch(/if-no-files-found: ignore/);
+    expect(native).toMatch(/\.native-build\/logs\n\s*\.native-build\/compilation-native\.log/);
   });
 
   it("transmet le payload natif vérifié entre les deux travaux Windows", () => {
