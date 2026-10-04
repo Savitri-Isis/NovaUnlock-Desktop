@@ -192,16 +192,6 @@ jobs:
           check-latest: true
           cache: npm
 
-      - name: Récupérer les outils natifs compilés
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ env.NATIVE_ARTIFACT }}
-          path: native/libimobiledevice
-
-      - name: Vérifier le payload reçu
-        shell: pwsh
-        run: node scripts/verify-native.cjs
-
       # Ici les scripts d'installation s'exécutent : electron, usb et node-hid
       # installent les binaires natifs Windows dont dépend l'application.
       - name: Installer les dépendances verrouillées
@@ -209,6 +199,12 @@ jobs:
 
       # La sortie est conservée : un test qui n'échoue que sur Windows ne se
       # diagnostique pas depuis les journaux bruts, inaccessibles par API.
+      #
+      # Ces tests précèdent volontairement la récupération du payload natif :
+      # plusieurs décrivent un poste sans outils natifs — c'est le cas sur ubuntu
+      # et en local — et l'un d'eux exige que le binaire de restauration soit
+      # absent (« introuvable »). Les exécuter après le téléchargement les ferait
+      # échouer pour une raison d'environnement, pas de code.
       - name: Tests unitaires sur Windows
         shell: bash
         run: |
@@ -223,6 +219,16 @@ jobs:
             tests-windows.log \
             "FAIL|AssertionError|Error:|expected|Tests  " \
             "Tests Windows — échecs :"
+
+      - name: Récupérer les outils natifs compilés
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.NATIVE_ARTIFACT }}
+          path: native/libimobiledevice
+
+      - name: Vérifier le payload reçu
+        shell: pwsh
+        run: node scripts/verify-native.cjs
 
       # package:win exécute verify:native, compile l'interface et le processus
       # principal, puis electron-builder (cibles nsis et portable de package.json).

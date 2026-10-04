@@ -178,6 +178,22 @@ describe("Chaîne de construction GitHub Actions", () => {
     expect(installer).toMatch(/publish-failure-annotation\.sh/);
   });
 
+  it("teste sur Windows avant l'arrivée du payload natif", () => {
+    // Plusieurs tests unitaires décrivent un poste sans outils natifs — c'est le
+    // cas sur ubuntu et en local — et l'un exige que le binaire de restauration
+    // soit absent (« introuvable »). Les exécuter après le téléchargement du
+    // payload les ferait échouer pour une raison d'environnement, pas de code.
+    const installer = jobBlock("installateur");
+    const tests = installer.indexOf("Tests unitaires sur Windows");
+    const payload = installer.indexOf("Récupérer les outils natifs compilés");
+    const dependances = installer.indexOf("Installer les dépendances verrouillées");
+    expect(tests).toBeGreaterThan(-1);
+    expect(payload).toBeGreaterThan(-1);
+    expect(dependances).toBeGreaterThan(-1);
+    expect(dependances).toBeLessThan(tests);
+    expect(tests).toBeLessThan(payload);
+  });
+
   it("transmet le payload natif vérifié entre les deux travaux Windows", () => {
     const native = jobBlock("outils-natifs");
     const installer = jobBlock("installateur");
