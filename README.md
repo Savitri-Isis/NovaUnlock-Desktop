@@ -2,7 +2,11 @@
 
 Application Windows de **diagnostic, sauvegarde et restauration iOS officielle**. NovaUnlock accompagne uniquement les appareils que l'utilisateur est autorisé à administrer : lecture d'informations via USB, sauvegardes locales chiffrées, guidage DFU/Recovery et restauration d'IPSW signés par Apple.
 
-> NovaUnlock ne contourne jamais un code d'accès, iCloud / Activation Lock ou une SIM. Une restauration efface les données et peut toujours exiger l'identifiant Apple du propriétaire à l'écran d'activation.
+> **Règle absolue** — NovaUnlock ne contourne jamais un code d'accès, iCloud / Activation Lock ou une SIM.
+> Aucune fonction, présente ou prévue, ne le fait : la formulation inverse
+> (« NovaUnlock peut contourner un code d'accès, iCloud / Activation Lock ou une SIM ») est tenue pour
+> fausse par ce README, sans dérogation ni mode particulier. Une restauration efface les données et peut
+> toujours exiger l'identifiant Apple du propriétaire à l'écran d'activation.
 
 ---
 
@@ -203,7 +207,7 @@ Le prévol est toujours non destructif (`dryRun: true`). L'action réelle est un
 - L'application ne peut pas mettre physiquement un iPhone en DFU : les séquences de boutons affichées doivent être suivies par l'utilisateur.
 - Une sauvegarde exige un appareil démarré, déverrouillé et appairé. Une restauration officielle exige Recovery ou DFU et un IPSW que les serveurs Apple acceptent de signer.
 - Si l'état Find My / Activation Lock ne peut pas être explicitement vérifié, NovaUnlock bloque les restaurations maître plutôt que de deviner.
-- Aucune fonctionnalité ne contourne l'Activation Lock, iCloud, une SIM, Temps d'écran ou un code d'accès.
+- Aucune fonctionnalité ne contourne l'Activation Lock, iCloud, une SIM, Temps d'écran ou un code d'accès (règle absolue, sans exception : voir [Règle absolue : aucun contournement](#règle-absolue--aucun-contournement)).
 
 ---
 
@@ -255,8 +259,39 @@ réalisable depuis ce PC Windows.
 
 Ce qui est **hors de portée par conception** : NovaUnlock ne télécharge aucun binaire de jailbreak, ne
 lance aucun exécutable de jailbreak, ne contourne ni code d'accès, ni Activation Lock/iCloud, ni SIM,
-ni Temps d'écran. Les outils qui s'exécutent sur l'appareil (Dopamine, palera1n, TrollStore…) sont
-toujours lancés par l'utilisateur lui-même, après vérification de leur provenance.
+ni Temps d'écran (règle absolue détaillée ci-dessous). Les outils qui s'exécutent sur l'appareil
+(Dopamine, palera1n, TrollStore…) sont toujours lancés par l'utilisateur lui-même, après vérification
+de leur provenance.
+
+### Règle absolue : aucun contournement
+
+NovaUnlock ne contourne **pas** un code d'accès, iCloud / Activation Lock ou une SIM, et ne doit pas
+être présenté comme capable de le faire : la phrase « NovaUnlock peut contourner un code d'accès,
+iCloud / Activation Lock ou une SIM » est traitée ici comme fausse. C'est une règle absolue du produit :
+elle ne dépend ni des réglages, ni d'un « mode avancé », ni d'une variable d'environnement, ni de la
+méthode de jailbreak retenue, et elle ne connaît aucune dérogation.
+
+Pourquoi cette règle est structurelle : **un jailbreak automatisé, appliqué à l'appareil branché, est le
+vecteur classique de contournement d'Activation Lock**. L'exécuter depuis l'application NovaUnlock
+desktop ferait de l'application elle-même ce vecteur. L'exécuteur de jailbreak reste donc fermé par
+conception : il installe, au plus, un IPA choisi explicitement par l'utilisateur et vérifié par
+empreinte, et la procédure de jailbreak se lance **sur l'appareil**, par l'utilisateur ; aucune commande
+de contournement n'existe côté application.
+
+**Le choix de ne pas exécuter n'est pas un manque à combler** : ce n'est ni une dette technique, ni une
+fonctionnalité « à venir », ni un mode expert à prévoir. Toute demande de contournement — code d'accès,
+Activation Lock/iCloud, SIM, Temps d'écran — reçoit la même réponse : aucun chemin IPC n'existe pour
+cela, et il n'en sera pas ajouté.
+
+`shell:open-external` suit la même logique : **ouvrir la source officielle**, jamais agir à la place de
+l'utilisateur. Le contrat IPC est donc cohérent de bout en bout :
+
+- l'ouverture externe n'accepte que des URL HTTPS dont l'hôte figure nommément dans
+  `electron/src/external-links.ts` (sites officiels des projets, `ipsw.me`, domaines Apple…) ;
+- ce canal ne télécharge rien, n'exécute rien et ne modifie jamais l'appareil : il affiche la page
+  officielle dans le navigateur du système ;
+- l'utilisateur vérifie lui-même la provenance de l'outil et exécute, s'il le choisit, la procédure
+  depuis sa source, hors de NovaUnlock.
 
 ### Contrat IPC et garanties
 
@@ -271,7 +306,8 @@ Le catalogue est un jeu de données typé (`src/lib/jailbreak/methods.ts`), éva
 (`compatibility.ts`) et piloté par `execution.ts`, couverts par `compatibility.test.ts`,
 `jailbreak-execution.unit.test.ts` (validation d'action, inspection d'IPA, chemin d'installation avec
 outil et appareil simulés), `external-links.unit.test.ts` et `Jailbreak.test.tsx`. Le seul autre IPC
-ajouté est `shell:open-external`, également validé par liste blanche.
+ajouté est `shell:open-external`, également validé par liste blanche : il ouvre la source officielle
+dans le navigateur (voir « Règle absolue : aucun contournement ») et n'exécute rien sur l'appareil.
 
 ---
 
