@@ -38,8 +38,16 @@ packages=(
   mingw-w64-ucrt-x86_64-libusb
 )
 
+# Un runner CI ne peut pas répondre à la confirmation de pacman : acceptez-la
+# d'avance avec NOVAUNLOCK_PACMAN_NOCONFIRM=1 (ou CI=true, positionné par GitHub
+# Actions). En local, la confirmation reste demandée.
+pacman_flags=(--needed)
+if [[ "${CI:-}" == "true" || "${NOVAUNLOCK_PACMAN_NOCONFIRM:-}" == "1" ]]; then
+  pacman_flags+=(--noconfirm)
+fi
+
 printf 'Installation/vérification des outils de compilation MSYS2...\n'
-pacman -S --needed "${packages[@]}"
+pacman -S "${pacman_flags[@]}" "${packages[@]}"
 for command_name in git autoconf make pkgconf ldd objdump; do
   command -v "$command_name" >/dev/null 2>&1 || fail "Commande absente après installation MSYS2 : $command_name"
 done

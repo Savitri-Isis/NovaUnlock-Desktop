@@ -12,6 +12,21 @@ Cette notice concerne **l’utilisation de l’application déjà construite** s
 
 Node.js n’est **pas nécessaire** pour utiliser l’application installée. Il est nécessaire uniquement pour fabriquer l’installateur depuis le dépôt.
 
+### Où obtenir l’installateur
+
+Le dépôt fabrique l’installateur sur GitHub, sans PC Windows : le workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) compile les outils natifs depuis les sources épinglées, puis crée les fichiers `.exe`. Deux sources équivalentes :
+
+- **Releases** (recommandé) : ouvrez l’onglet *Releases* du dépôt et téléchargez `NovaUnlock-Setup-<version>-x64.exe` avec `SHA256SUMS.txt` ; ces fichiers sont publiés à chaque étiquette `v<version>`, dont la cohérence avec [`package.json`](package.json) est contrôlée avant publication ;
+- **Actions** (construction à la demande) : ouvrez l’exécution du workflow *Construire l’installateur Windows*, puis téléchargez l’artefact `NovaUnlock-Windows-x64` (installateur, version portable et `SHA256SUMS.txt`, conservé 30 jours).
+
+Les fichiers produits ne sont pas signés : Windows peut afficher un avertissement SmartScreen. Avant d’installer, comparez l’empreinte du fichier téléchargé avec celle de `SHA256SUMS.txt` :
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\NovaUnlock-Setup-1.0.0-x64.exe
+```
+
+N’installez que des fichiers provenant du dépôt de confiance dont l’empreinte correspond. Cela ne remplace pas les autres précautions : NovaUnlock ne contourne ni code d’accès, ni iCloud / Activation Lock, ni SIM.
+
 ## 2. Installer l’application
 
 1. Fermez les applications qui utilisent l’iPhone ou l’iPad, notamment Apple Devices ou iTunes.

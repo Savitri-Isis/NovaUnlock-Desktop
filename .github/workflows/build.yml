@@ -1,0 +1,220 @@
+# NovaUnlock Desktop — construction de l'installateur Windows (.exe) sur GitHub Actions.
+#
+# Ce fichier applique exactement la procédure décrite dans README.md, sans en retirer
+# aucune étape de sécurité :
+#   1. les outils natifs libimobiledevice sont compilés depuis les sources amont
+#      épinglées de scripts/native-sources.lock, avec MSYS2 UCRT64, par le script
+#      versionné scripts/build-native-msys2.sh : aucun exécutable tiers précompilé
+#      n'est téléchargé ;
+#   2. l'application est compilée puis empaquetée par electron-builder ;
+#   3. les fichiers .exe obtenus sont joints à l'exécution (onglet Actions →
+#      « Artifacts ») et, pour une étiquette v<version>, publiés dans l'onglet
+#      Releases du dépôt.
+#
+# Utilisation :
+#   - onglet « Actions » → « Construire l'installateur Windows » → « Run workflow »
+#     pour une construction manuelle ;
+#   - `git tag v1.0.0 && git push origin v1.0.0` pour publier une Release complète.
+#
+# Les demandes de fusion ne lancent que la vérification rapide (lint + tests) : la
+# compilation native de MSYS2 dure plusieurs dizaines de minutes.
+
+name: Construire l'installateur Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+# Le jeton par défaut reste en lecture seule ; seul le travail de publication reçoit
+# l'autorisation d'écrire une Release.
+permissions:
+  contents: read
+
+# Deux constructions du même point de départ se marcheraient dessus (disque, minutes
+# de calcul, cache npm) : la seconde attend la fin de la première.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Doit satisfaire le champ « engines » de package.json (^22.22.2) : la dernière
+  # version 22.x publiée est résolue à chaque exécution.
+  NODE_VERSION: ">=22.22.2 <23"
+  # Nom de l'artefact qui transporte les outils natifs entre les travaux.
+  NATIVE_ARTIFACT: novaunlock-native-win-x64
+
+jobs:
+  verifier:
+    name: Lint et tests unitaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installer Node.js x64
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          architecture: x64
+          check-latest: true
+          cache: npm
+
+      # --ignore-scripts : le lint et les tests unitaires sont en JavaScript pur ; les
+      # modules natifs (usb, node-hid) et le binaire Electron ne servent pas ici, et
+      # leur compilation ralentirait la vérification sans rien prouver de plus.
+      - name: Installer les dépendances verrouillées
+        run: npm ci --include=dev --ignore-scripts
+
+      - name: Analyse statique (ESLint)
+        run: npm run lint
+
+      - name: Tests unitaires (Vitest)
+        run: npm test
+
+  outils-natifs:
+    name: Outils natifs libimobiledevice (MSYS2 UCRT64)
+    runs-on: windows-latest
+    needs: verifier
+    # La compilation MSYS2 est longue : elle est réservée à main, aux étiquettes et
+    # aux exécutions manuelles, jamais aux demandes de fusion.
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 240
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installer MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+
+      # Le script installe lui-même la liste de paquets qu'il utilise : la version
+      # locale (Creer-installateur-Windows.cmd) et la version CI compilent donc avec
+      # le même outillage. NOVAUNLOCK_PACMAN_NOCONFIRM évite l'invite interactive.
+      - name: Compiler les outils depuis les sources amont épinglées
+        shell: "msys2 {0}"
+        env:
+          NOVAUNLOCK_PACMAN_NOCONFIRM: "1"
+        run: bash scripts/build-native-msys2.sh
+
+      - name: Installer Node.js x64 (vérification du payload)
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          architecture: x64
+          check-latest: true
+
+      - name: Vérifier les six outils natifs attendus
+        shell: pwsh
+        run: node scripts/verify-native.cjs
+
+      - name: Conserver les journaux de compilation en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: journaux-compilation-native
+          path: .native-build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Transmettre le payload natif au travail d'empaquetage
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.NATIVE_ARTIFACT }}
+          path: native/libimobiledevice
+          if-no-files-found: error
+          retention-days: 7
+
+  installateur:
+    name: Installateur et version portable (.exe)
+    runs-on: windows-latest
+    needs: outils-natifs
+    timeout-minutes: 120
+    permissions:
+      contents: write # nécessaire pour créer la Release sur une étiquette v*
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installer Node.js x64
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          architecture: x64
+          check-latest: true
+          cache: npm
+
+      - name: Récupérer les outils natifs compilés
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.NATIVE_ARTIFACT }}
+          path: native/libimobiledevice
+
+      - name: Vérifier le payload reçu
+        shell: pwsh
+        run: node scripts/verify-native.cjs
+
+      # Ici les scripts d'installation s'exécutent : electron, usb et node-hid
+      # installent les binaires natifs Windows dont dépend l'application.
+      - name: Installer les dépendances verrouillées
+        run: npm ci --include=dev
+
+      - name: Tests unitaires sur Windows
+        run: npm test
+
+      # package:win exécute verify:native, compile l'interface et le processus
+      # principal, puis electron-builder (cibles nsis et portable de package.json).
+      # --publish never : la publication est faite plus bas, jamais par electron-builder.
+      - name: Compiler l'application et créer les .exe
+        env:
+          # Aucun certificat de signature n'est fourni au dépôt : Electron Builder
+          # ignore la signature au lieu d'échouer sur une identité absente.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run package:win -- --publish never
+
+      - name: Calculer les empreintes SHA-256 des fichiers livrés
+        shell: bash
+        run: |
+          cd release
+          sha256sum ./*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publier les .exe dans les artefacts de l'exécution
+        uses: actions/upload-artifact@v7
+        with:
+          name: NovaUnlock-Windows-x64
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      # Une étiquette v1.0.0 qui ne correspond pas à la version de package.json
+      # produirait des fichiers mal nommés : la différence arrête la publication.
+      - name: Publier la Release GitHub (étiquette v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "::error::L'étiquette ${GITHUB_REF_NAME} ne correspond pas à la version ${version} de package.json."
+            exit 1
+          fi
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release/*.exe release/SHA256SUMS.txt --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release/*.exe release/SHA256SUMS.txt \
+              --title "NovaUnlock ${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
+          fi
+          echo "Release publiée : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"

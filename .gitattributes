@@ -1,0 +1,9 @@
+# Fins de ligne normalisées dans l'index, quel que soit core.autocrlf de la machine.
+# Sans ces règles, un checkout Windows (core.autocrlf=true) peut livrer des scripts
+# .sh en CRLF : MSYS2 les refuse alors avec « $'\r': command not found », aussi bien
+# en local que dans GitHub Actions.
+* text=auto
+
+# Scripts et correctifs exécutés par Bash/MSYS2 : ils doivent rester en LF partout.
+*.sh text eol=lf
+*.patch text eol=lf
