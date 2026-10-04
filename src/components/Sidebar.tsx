@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { path: "/connect", label: "Connecter", icon: "C" },
   { path: "/dfu", label: "DFU Mode", icon: "DF" },
   { path: "/recovery", label: "Recovery", icon: "R" },
+  { path: "/jailbreak", label: "Jailbreak", icon: "JB" },
   { path: "/firmware", label: "Firmware", icon: "FW" },
   { path: "/device-info", label: "Infos", icon: "I" },
   { path: "/settings", label: "Settings", icon: "S" },

@@ -8,6 +8,7 @@ import Firmware from "./renderer/Firmware";
 import DeviceInfo from "./renderer/DeviceInfo";
 import Settings from "./renderer/Settings";
 import Master from "./renderer/Master";
+import Jailbreak from "./renderer/Jailbreak";
 import Sidebar from "./components/Sidebar";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { DeviceDetector } from "./lib/usb/DeviceDetector";
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/connect" element={<DeviceConnect />} />
               <Route path="/dfu" element={<DFU />} />
               <Route path="/recovery" element={<Recovery />} />
+              <Route path="/jailbreak" element={<Jailbreak />} />
               <Route path="/firmware" element={<Firmware />} />
               <Route path="/device-info" element={<DeviceInfo />} />
               <Route path="/settings" element={<Settings />} />
