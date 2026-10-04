@@ -315,6 +315,7 @@ describe("Master Service — Validation, Plist, Disque et Prévol", () => {
         restore: true,
         recovery: true,
         enterRecovery: true,
+        installer: false,
       },
       missing: [],
       source: "bundled" as const,

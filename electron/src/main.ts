@@ -17,6 +17,11 @@ import {
 } from "./master-service";
 import { getNativeToolStatus, importNativePayload } from "./usb-scanner";
 import { getMasterOperationStatus, startMasterOperation } from "./master-operation-manager";
+import {
+  getJailbreakOperationStatus,
+  startJailbreakOperation,
+} from "./jailbreak-operation-manager";
+import { isAllowedExternalUrl } from "./external-links";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -24,21 +29,6 @@ let mainWindow: BrowserWindow | null = null;
 function rendererNativeStatus() {
   const status = getNativeToolStatus();
   return { ...status, searchRoots: [] };
-}
-
-const ALLOWED_EXTERNAL_HOSTS = new Set([
-  "support.apple.com",
-  "ipsw.me",
-  "github.com",
-]);
-
-function isAllowedExternalUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl);
-    return parsed.protocol === "https:" && ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase());
-  } catch {
-    return false;
-  }
 }
 
 function createWindow() {
@@ -264,6 +254,39 @@ ipcMain.handle("master:execute", async (_, request: unknown) => startMasterOpera
 
 ipcMain.handle("master:operation-status", async (_, operationId: unknown) =>
   getMasterOperationStatus(operationId)
+);
+
+ipcMain.handle("shell:open-external", async (_, url: unknown) => {
+  if (typeof url !== "string" || !isAllowedExternalUrl(url)) {
+    throw new Error("Lien externe non autorisé.");
+  }
+  await shell.openExternal(url);
+  return { success: true };
+});
+
+ipcMain.handle("jailbreak:capabilities", async () => {
+  const { resolveInstallerTool } = require(path.join(__dirname, "./jailbreak-executor"));
+  const { getConnectedUdid } = require(path.join(__dirname, "./usb-scanner"));
+  return {
+    installReady: Boolean(resolveInstallerTool()),
+    devicePaired: Boolean(getConnectedUdid()),
+  };
+});
+
+ipcMain.handle("jailbreak:select-ipa", async () => {
+  const selected = await dialog.showOpenDialog({
+    title: "Sélectionnez l'IPA de jailbreak téléchargé depuis la source officielle",
+    properties: ["openFile"],
+    filters: [{ name: "Application IPA", extensions: ["ipa"] }],
+    buttonLabel: "Utiliser cet IPA",
+  });
+  return selected.canceled || selected.filePaths.length === 0 ? null : selected.filePaths[0];
+});
+
+ipcMain.handle("jailbreak:apply", async (_, action: unknown) => startJailbreakOperation(action));
+
+ipcMain.handle("jailbreak:apply-status", async (_, operationId: unknown) =>
+  getJailbreakOperationStatus(operationId)
 );
 
 ipcMain.handle("master:audit", async (_, task: unknown, deviceId: unknown, event: unknown) => {

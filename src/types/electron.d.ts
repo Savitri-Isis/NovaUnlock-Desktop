@@ -119,6 +119,41 @@ export interface MasterOperationStatus {
   };
 }
 
+export interface JailbreakCapabilities {
+  installReady: boolean;
+  devicePaired: boolean;
+}
+
+export interface JailbreakActionPayload {
+  methodId: string;
+  methodName: string;
+  kind: "install-ipa" | "manual";
+  sourceUrl: string;
+  artifactPath?: string;
+  manualSteps?: string[];
+}
+
+export interface JailbreakOperationStatus {
+  id: string;
+  methodId: string;
+  methodName: string;
+  state: "queued" | "running" | "completed" | "failed" | "blocked";
+  progress: number | null;
+  stage: string;
+  speed?: string;
+  updatedAt: string;
+  result?: {
+    success: boolean;
+    methodId: string;
+    methodName: string;
+    kind: "install-ipa" | "manual";
+    stage: string;
+    message: string;
+    artifact?: { fileName: string; size: string; sha256: string };
+    toolOutput?: string;
+  };
+}
+
 export interface NovaUnlockAPI {
   scanDevices: () => Promise<DeviceInfo | null>;
   scanAllDevices?: () => Promise<DeviceInfo[]>;
@@ -151,6 +186,15 @@ export interface NovaUnlockAPI {
   executeMaster: (request: MasterExecutionRequest) => Promise<MasterOperationStatus>;
   getMasterOperationStatus: (operationId: string) => Promise<MasterOperationStatus | null>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
+  /** Ouvre un lien de la liste blanche dans le navigateur du système. */
+  openExternal?: (url: string) => Promise<{ success: boolean }>;
+  /** Capacités natives pour l'application assistée d'un jailbreak. */
+  jailbreakCapabilities?: () => Promise<JailbreakCapabilities>;
+  /** Sélecteur de fichier pour l'IPA téléchargé par l'utilisateur. */
+  selectJailbreakIpa?: () => Promise<string | null>;
+  /** Lance l'action validée (installation IPA ou étapes manuelles). */
+  applyJailbreak?: (action: JailbreakActionPayload) => Promise<JailbreakOperationStatus>;
+  getJailbreakOperationStatus?: (operationId: string) => Promise<JailbreakOperationStatus | null>;
 }
 
 declare global {

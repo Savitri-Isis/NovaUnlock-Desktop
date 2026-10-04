@@ -143,7 +143,10 @@ describe("Navigation React Router v7", () => {
     fireEvent.click(screen.getByRole("link", { name: /Jailbreak/i }));
     expect(window.location.pathname).toBe("/jailbreak");
     expect(screen.getByRole("heading", { name: "Assistant jailbreak" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Lancement indisponible/i })).toBeDisabled();
+    expect(screen.getByTestId("methode-dopamine")).toBeInTheDocument();
+    expect(
+      screen.getByText(/ne télécharge, n’installe et n’exécute aucune charge utile de jailbreak/i)
+    ).toBeInTheDocument();
     expect(window.novaunlock.checkJailbreakStatus).not.toHaveBeenCalled();
   });
 

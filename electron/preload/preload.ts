@@ -45,6 +45,43 @@ export interface ActivationLockStatus {
   message?: string;
 }
 
+export interface JailbreakCapabilities {
+  /** ideviceinstaller.exe est disponible dans le paquet natif configuré. */
+  installReady: boolean;
+  /** Un appareil est réellement appairé et peut recevoir une installation. */
+  devicePaired: boolean;
+}
+
+export interface JailbreakActionPayload {
+  methodId: string;
+  methodName: string;
+  kind: "install-ipa" | "manual";
+  sourceUrl: string;
+  artifactPath?: string;
+  manualSteps?: string[];
+}
+
+export interface JailbreakOperationStatus {
+  id: string;
+  methodId: string;
+  methodName: string;
+  state: "queued" | "running" | "completed" | "failed" | "blocked";
+  progress: number | null;
+  stage: string;
+  speed?: string;
+  updatedAt: string;
+  result?: {
+    success: boolean;
+    methodId: string;
+    methodName: string;
+    kind: "install-ipa" | "manual";
+    stage: string;
+    message: string;
+    artifact?: { fileName: string; size: string; sha256: string };
+    toolOutput?: string;
+  };
+}
+
 export interface NativeToolStatus {
   diagnosticsReady: boolean;
   backupReady: boolean;
@@ -156,6 +193,11 @@ export type USBChannel = {
   executeMaster: (request: MasterExecutionRequest) => Promise<MasterOperationStatus>;
   getMasterOperationStatus: (operationId: string) => Promise<MasterOperationStatus | null>;
   appendAudit: (task: string, deviceId: string, event: string) => Promise<{ success: boolean }>;
+  openExternal: (url: string) => Promise<{ success: boolean }>;
+  jailbreakCapabilities: () => Promise<JailbreakCapabilities>;
+  selectJailbreakIpa: () => Promise<string | null>;
+  applyJailbreak: (action: JailbreakActionPayload) => Promise<JailbreakOperationStatus>;
+  getJailbreakOperationStatus: (operationId: string) => Promise<JailbreakOperationStatus | null>;
 };
 
 contextBridge.exposeInMainWorld("novaunlock", {
@@ -188,6 +230,14 @@ contextBridge.exposeInMainWorld("novaunlock", {
     ipcRenderer.invoke("master:operation-status", operationId),
   appendAudit: (task: string, deviceId: string, event: string) =>
     ipcRenderer.invoke("master:audit", task, deviceId, event),
+  openExternal: (url: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke("shell:open-external", url),
+  jailbreakCapabilities: (): Promise<JailbreakCapabilities> => ipcRenderer.invoke("jailbreak:capabilities"),
+  selectJailbreakIpa: (): Promise<string | null> => ipcRenderer.invoke("jailbreak:select-ipa"),
+  applyJailbreak: (action: JailbreakActionPayload): Promise<JailbreakOperationStatus> =>
+    ipcRenderer.invoke("jailbreak:apply", action),
+  getJailbreakOperationStatus: (operationId: string): Promise<JailbreakOperationStatus | null> =>
+    ipcRenderer.invoke("jailbreak:apply-status", operationId),
 });
 
 export type ElectronAPI = USBChannel;
