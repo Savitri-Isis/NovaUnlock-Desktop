@@ -7,3 +7,7 @@
 # Scripts et correctifs exécutés par Bash/MSYS2 : ils doivent rester en LF partout.
 *.sh text eol=lf
 *.patch text eol=lf
+
+# Liste de versions lue champ par champ par scripts/build-native-msys2.sh : un \r
+# final sur la dernière colonne ferait échouer le contrôle d'empreinte SHA-1.
+*.lock text eol=lf

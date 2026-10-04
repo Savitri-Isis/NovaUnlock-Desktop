@@ -71,4 +71,18 @@ describe("Correctifs locaux des sources natives", () => {
     expect(buildScript).toContain("git -c advice.detachedHead=false clone");
     expect(buildScript).not.toMatch(/git config .*advice\.detachedHead/);
   });
+
+  it("survit à un checkout Windows qui réécrit les fichiers en CRLF", () => {
+    // core.autocrlf=true réécrit en CRLF tout fichier texte non épinglé. Le \r
+    // final de la dernière colonne de native-sources.lock faisait alors échouer le
+    // contrôle d'empreinte dès la première ligne (« SHA de source invalide … pour
+    // libplist »), avant même le premier clonage.
+    const gitattributes = fs.readFileSync(path.resolve(".gitattributes"), "utf8");
+    expect(gitattributes).toMatch(/^\*\.lock text eol=lf$/m);
+    expect(gitattributes).toMatch(/^\*\.sh text eol=lf$/m);
+    expect(gitattributes).toMatch(/^\*\.patch text eol=lf$/m);
+    // Défense en profondeur : le constructeur retire aussi le \r s'il subsiste, car
+    // .gitattributes ne s'applique qu'au moment du checkout.
+    expect(buildScript).toMatch(/expected_sha="\$\{expected_sha%\$'\\r'\}"/);
+  });
 });

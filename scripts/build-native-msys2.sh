@@ -84,6 +84,12 @@ export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 # build output stays readable without changing the user's global Git settings.
 declare -A locked_versions=()
 while read -r project version expected_sha; do
+  # Un checkout Windows (core.autocrlf=true) matérialise ce fichier en CRLF s'il
+  # n'est pas épinglé en LF : la dernière colonne porterait alors un \r final et le
+  # contrôle d'empreinte ci-dessous rejetterait à tort la première ligne. Le retrait
+  # rend la lecture indépendante des réglages Git de la machine.
+  project="${project:-}"; version="${version:-}"; expected_sha="${expected_sha:-}"
+  project="${project%$'\r'}"; version="${version%$'\r'}"; expected_sha="${expected_sha%$'\r'}"
   [[ -z "${project:-}" || "$project" == \#* ]] && continue
   [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail "SHA de source invalide dans $LOCK_FILE pour $project"
 
