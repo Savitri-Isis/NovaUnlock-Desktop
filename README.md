@@ -113,6 +113,7 @@ Précautions et limites :
 
 - les fichiers produits ne sont **pas signés** : Windows SmartScreen peut afficher un avertissement, et la provenance doit être vérifiée ; comparez l’empreinte du fichier téléchargé avec `SHA256SUMS.txt` avant d’installer ;
 - une **demande de fusion** ne lance que le lint et les tests : la compilation native dure plusieurs dizaines de minutes et n’est déclenchée que sur `main`, sur une étiquette ou à la demande ;
+- la **première** construction est la plus longue (huit projets amont compilés) ; le payload natif obtenu est ensuite mis en cache par GitHub sous une clé qui contient l’empreinte de [`scripts/native-sources.lock`](scripts/native-sources.lock) et des correctifs : une reconstruction à sources identiques ne recompile rien, alors qu’une modification des sources épinglées déclenche une recompilation complète, sans jamais réutiliser un binaire d’une autre version ;
 - en cas d’échec de la compilation native, les journaux sont conservés dans l’artefact `journaux-compilation-native` ;
 - les empreintes SHA-256 calculées par le bâtisseur GitHub ne remplacent pas la vérification d’authenticité : elles prouvent seulement que le fichier publié n’a pas été modifié depuis sa construction.
 

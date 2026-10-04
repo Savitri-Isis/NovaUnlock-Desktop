@@ -111,6 +111,23 @@ describe("Chaîne de construction GitHub Actions", () => {
     expect(nativeBuilder).toMatch(/pacman_flags\+=\(--noconfirm\)/);
   });
 
+  it("réutilise un payload compilé sans jamais mélanger deux versions épinglées", () => {
+    const native = jobBlock("outils-natifs");
+    // La clé de cache contient l'empreinte des sources épinglées et des correctifs :
+    // toute modification de l'un ou de l'autre force une recompilation complète.
+    expect(native).toMatch(/actions\/cache@v6/);
+    expect(native).toMatch(
+      /key: novaunlock-native-win-x64-\$\{\{ hashFiles\('scripts\/native-sources\.lock', 'scripts\/patches\/\*\.patch'\) \}\}/
+    );
+    // Aucune clé de repli : un cache approximatif ne doit jamais fournir des
+    // binaires compilés depuis d'autres sources.
+    expect(native).not.toMatch(/^\s*restore-keys:/m);
+    // Seules la préparation de MSYS2 et la compilation dépendent du cache ; la
+    // vérification du payload, elle, s'exécute aussi après une restauration.
+    expect(native).toMatch(/if: steps\.cache-native\.outputs\.cache-hit != 'true'/);
+    expect(native).toMatch(/node scripts\/verify-native\.cjs/);
+  });
+
   it("réserve la compilation native aux envois, pas aux demandes de fusion", () => {
     expect(jobBlock("outils-natifs")).toMatch(/if: github\.event_name != 'pull_request'/);
     expect(jobBlock("installateur")).toMatch(/needs: outils-natifs/);

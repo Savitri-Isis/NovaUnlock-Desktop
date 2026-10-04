@@ -88,7 +88,20 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@v7
 
+      # Le payload déjà compilé est restauré sous une clé qui contient l'empreinte des
+      # sources épinglées : modifier native-sources.lock ou un correctif change la clé
+      # et force une recompilation. Aucune clé de repli (restore-keys) n'est déclarée :
+      # un cache approximatif ne doit jamais réutiliser des binaires d'une autre
+      # version. Le payload restauré est vérifié plus bas, comme après compilation.
+      - name: Restaurer le payload natif déjà compilé
+        id: cache-native
+        uses: actions/cache@v6
+        with:
+          path: native/libimobiledevice
+          key: novaunlock-native-win-x64-${{ hashFiles('scripts/native-sources.lock', 'scripts/patches/*.patch') }}
+
       - name: Installer MSYS2 (UCRT64)
+        if: steps.cache-native.outputs.cache-hit != 'true'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -98,6 +111,7 @@ jobs:
       # locale (Creer-installateur-Windows.cmd) et la version CI compilent donc avec
       # le même outillage. NOVAUNLOCK_PACMAN_NOCONFIRM évite l'invite interactive.
       - name: Compiler les outils depuis les sources amont épinglées
+        if: steps.cache-native.outputs.cache-hit != 'true'
         shell: "msys2 {0}"
         env:
           NOVAUNLOCK_PACMAN_NOCONFIRM: "1"
