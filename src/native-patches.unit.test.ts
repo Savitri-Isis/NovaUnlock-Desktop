@@ -10,7 +10,13 @@ import * as path from "node:path";
  * would silently build a payload from unexpected sources.
  */
 const patchesDirectory = path.resolve("scripts", "patches");
-const buildScript = fs.readFileSync(path.resolve("scripts", "build-native-msys2.sh"), "utf8");
+// Fins de ligne normalisées : un checkout Windows (core.autocrlf=true) réécrit ces
+// fichiers texte en CRLF, ce qui casserait les motifs contenant des \n littéraux.
+function readNormalized(...segments: string[]): string {
+  return fs.readFileSync(path.resolve(...segments), "utf8").replace(/\r\n/g, "\n");
+}
+
+const buildScript = readNormalized("scripts", "build-native-msys2.sh");
 
 function lockedVersions(): Map<string, string> {
   const entries = fs
@@ -77,7 +83,7 @@ describe("Correctifs locaux des sources natives", () => {
     // final de la dernière colonne de native-sources.lock faisait alors échouer le
     // contrôle d'empreinte dès la première ligne (« SHA de source invalide … pour
     // libplist »), avant même le premier clonage.
-    const gitattributes = fs.readFileSync(path.resolve(".gitattributes"), "utf8");
+    const gitattributes = readNormalized(".gitattributes");
     expect(gitattributes).toMatch(/^\*\.lock text eol=lf$/m);
     expect(gitattributes).toMatch(/^\*\.sh text eol=lf$/m);
     expect(gitattributes).toMatch(/^\*\.patch text eol=lf$/m);

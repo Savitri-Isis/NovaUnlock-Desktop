@@ -15,8 +15,16 @@ import * as path from "node:path";
  */
 const { supportedNodeVersion } = require("../scripts/package-windows.cjs");
 
-const workflow = fs.readFileSync(path.resolve(".github", "workflows", "build.yml"), "utf8");
-const nativeBuilder = fs.readFileSync(path.resolve("scripts", "build-native-msys2.sh"), "utf8");
+// Un checkout Windows (core.autocrlf=true) matérialise ces fichiers texte en CRLF.
+// Plusieurs motifs ci-dessous contiennent des retours à la ligne littéraux : sans
+// cette normalisation, ils échouent sur un runner Windows alors que le dépôt est
+// inchangé. La lecture passe donc partout par le même point.
+function readNormalized(...segments: string[]): string {
+  return fs.readFileSync(path.resolve(...segments), "utf8").replace(/\r\n/g, "\n");
+}
+
+const workflow = readNormalized(".github", "workflows", "build.yml");
+const nativeBuilder = readNormalized("scripts", "build-native-msys2.sh");
 const manifest = JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8")) as {
   version: string;
   engines: { node: string };
