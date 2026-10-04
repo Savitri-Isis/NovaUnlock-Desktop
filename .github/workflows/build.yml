@@ -81,8 +81,10 @@ jobs:
     runs-on: windows-latest
     needs: verifier
     # La compilation MSYS2 est longue : elle est réservée à main, aux étiquettes et
-    # aux exécutions manuelles, jamais aux demandes de fusion.
-    if: github.event_name != 'pull_request'
+    # aux exécutions manuelles. Une demande de fusion ne la déclenche pas, sauf si
+    # l'étiquette « construction-native » lui est posée explicitement : ce levier
+    # sert à reproduire un échec de compilation sans fusionner d'abord sur main.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'construction-native')
     timeout-minutes: 240
     steps:
       - name: Récupérer le dépôt
@@ -110,12 +112,21 @@ jobs:
       # Le script installe lui-même la liste de paquets qu'il utilise : la version
       # locale (Creer-installateur-Windows.cmd) et la version CI compilent donc avec
       # le même outillage. NOVAUNLOCK_PACMAN_NOCONFIRM évite l'invite interactive.
+      #
+      # tee conserve la sortie complète dans le dépôt de travail : le script
+      # n'écrit des .log qu'à partir du premier autogen.sh, donc un échec survenant
+      # avant (paquetage MSYS2, clonage, vérification des commandes) ne laissait
+      # aucune trace exploitable. pipefail garantit que l'échec du script reste
+      # l'échec de l'étape malgré le tuyau vers tee.
       - name: Compiler les outils depuis les sources amont épinglées
         if: steps.cache-native.outputs.cache-hit != 'true'
         shell: "msys2 {0}"
         env:
           NOVAUNLOCK_PACMAN_NOCONFIRM: "1"
-        run: bash scripts/build-native-msys2.sh
+        run: |
+          set -o pipefail
+          mkdir -p .native-build
+          bash scripts/build-native-msys2.sh 2>&1 | tee .native-build/compilation-native.log
 
       - name: Installer Node.js x64 (vérification du payload)
         uses: actions/setup-node@v7
@@ -128,13 +139,30 @@ jobs:
         shell: pwsh
         run: node scripts/verify-native.cjs
 
+      # Les journaux bruts d'un travail ne se téléchargent que depuis un navigateur.
+      # Les annotations, elles, sont exposées par l'API check-runs : publier les
+      # lignes d'erreur en annotation rend l'échec lisible sans ouvrir l'interface
+      # ni récupérer l'artefact.
+      - name: Publier les erreurs de compilation en annotation
+        if: failure()
+        shell: bash
+        run: |
+          bash scripts/publish-failure-annotation.sh \
+            .native-build/compilation-native.log \
+            "error:|\*\*\* |Error [0-9]+" \
+            "Compilation native — lignes d'erreur :"
+
       - name: Conserver les journaux de compilation en cas d'échec
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: journaux-compilation-native
-          path: .native-build/logs
-          if-no-files-found: ignore
+          path: |
+            .native-build/logs
+            .native-build/compilation-native.log
+          # Un échec survenu avant le premier autogen.sh ne produit aucun .log :
+          # « warn » le signale au lieu de laisser croire que des journaux existent.
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Transmettre le payload natif au travail d'empaquetage
@@ -164,6 +192,34 @@ jobs:
           check-latest: true
           cache: npm
 
+      # Ici les scripts d'installation s'exécutent : electron, usb et node-hid
+      # installent les binaires natifs Windows dont dépend l'application.
+      - name: Installer les dépendances verrouillées
+        run: npm ci --include=dev
+
+      # La sortie est conservée : un test qui n'échoue que sur Windows ne se
+      # diagnostique pas depuis les journaux bruts, inaccessibles par API.
+      #
+      # Ces tests précèdent volontairement la récupération du payload natif :
+      # plusieurs décrivent un poste sans outils natifs — c'est le cas sur ubuntu
+      # et en local — et l'un d'eux exige que le binaire de restauration soit
+      # absent (« introuvable »). Les exécuter après le téléchargement les ferait
+      # échouer pour une raison d'environnement, pas de code.
+      - name: Tests unitaires sur Windows
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee tests-windows.log
+
+      - name: Publier les tests en échec en annotation
+        if: failure()
+        shell: bash
+        run: |
+          bash scripts/publish-failure-annotation.sh \
+            tests-windows.log \
+            "FAIL|AssertionError|Error:|expected|Tests  " \
+            "Tests Windows — échecs :"
+
       - name: Récupérer les outils natifs compilés
         uses: actions/download-artifact@v8
         with:
@@ -173,14 +229,6 @@ jobs:
       - name: Vérifier le payload reçu
         shell: pwsh
         run: node scripts/verify-native.cjs
-
-      # Ici les scripts d'installation s'exécutent : electron, usb et node-hid
-      # installent les binaires natifs Windows dont dépend l'application.
-      - name: Installer les dépendances verrouillées
-        run: npm ci --include=dev
-
-      - name: Tests unitaires sur Windows
-        run: npm test
 
       # package:win exécute verify:native, compile l'interface et le processus
       # principal, puis electron-builder (cibles nsis et portable de package.json).

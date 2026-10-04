@@ -15,8 +15,17 @@ import * as path from "node:path";
  */
 const { supportedNodeVersion } = require("../scripts/package-windows.cjs");
 
-const workflow = fs.readFileSync(path.resolve(".github", "workflows", "build.yml"), "utf8");
-const nativeBuilder = fs.readFileSync(path.resolve("scripts", "build-native-msys2.sh"), "utf8");
+// Un checkout Windows (core.autocrlf=true) matérialise ces fichiers texte en CRLF.
+// Plusieurs motifs ci-dessous contiennent des retours à la ligne littéraux : sans
+// cette normalisation, ils échouent sur un runner Windows alors que le dépôt est
+// inchangé. La lecture passe donc partout par le même point.
+function readNormalized(...segments: string[]): string {
+  return fs.readFileSync(path.resolve(...segments), "utf8").replace(/\r\n/g, "\n");
+}
+
+const workflow = readNormalized(".github", "workflows", "build.yml");
+const nativeBuilder = readNormalized("scripts", "build-native-msys2.sh");
+const annotationPublisher = readNormalized("scripts", "publish-failure-annotation.sh");
 const manifest = JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8")) as {
   version: string;
   engines: { node: string };
@@ -128,9 +137,61 @@ describe("Chaîne de construction GitHub Actions", () => {
     expect(native).toMatch(/node scripts\/verify-native\.cjs/);
   });
 
-  it("réserve la compilation native aux envois, pas aux demandes de fusion", () => {
-    expect(jobBlock("outils-natifs")).toMatch(/if: github\.event_name != 'pull_request'/);
+  it("réserve la compilation native aux envois, sauf demande de fusion étiquetée", () => {
+    const native = jobBlock("outils-natifs");
+    // Par défaut une demande de fusion ne compile pas ; l'étiquette explicite
+    // « construction-native » est le seul levier qui l'autorise, pour reproduire un
+    // échec de compilation sans fusionner d'abord sur main.
+    expect(native).toMatch(
+      /if: github\.event_name != 'pull_request' \|\| contains\(github\.event\.pull_request\.labels\.\*\.name, 'construction-native'\)/
+    );
     expect(jobBlock("installateur")).toMatch(/needs: outils-natifs/);
+  });
+
+  it("conserve la sortie complète de la compilation et la rend lisible sur échec", () => {
+    const native = jobBlock("outils-natifs");
+    // Le script n'écrit des .log qu'à partir du premier autogen.sh : sans cette
+    // capture, un échec antérieur (paquetage MSYS2, clonage) ne laisse aucune trace.
+    expect(native).toMatch(/set -o pipefail/);
+    expect(native).toMatch(
+      /bash scripts\/build-native-msys2\.sh 2>&1 \| tee \.native-build\/compilation-native\.log/
+    );
+    // Les annotations sont exposées par l'API check-runs, contrairement aux journaux
+    // bruts et aux artefacts : l'échec doit y être publié, et l'artefact ne doit
+    // plus « ignorer » silencieusement un dossier vide.
+    expect(native).toMatch(/publish-failure-annotation\.sh/);
+    expect(native).toMatch(/if-no-files-found: warn/);
+    expect(native).not.toMatch(/if-no-files-found: ignore/);
+    expect(native).toMatch(/\.native-build\/logs\n\s*\.native-build\/compilation-native\.log/);
+    // Un make parallèle noie l'erreur sous les avertissements des fichiers compilés
+    // ensuite : elle doit être extraite du journal complet, et non de sa seule fin.
+    expect(annotationPublisher).toMatch(/grep -nE "\$pattern" "\$log"/);
+    expect(nativeBuilder).toMatch(/show_log_failure "\$build_log"/);
+    expect(nativeBuilder).not.toMatch(/tail -n 80/);
+  });
+
+  it("conserve la sortie des tests Windows pour diagnostiquer un échec", () => {
+    // Ces tests passent sur ubuntu et en local ; un échec uniquement Windows ne
+    // se lit ni dans les journaux bruts ni dans les artefacts.
+    const installer = jobBlock("installateur");
+    expect(installer).toMatch(/npm test 2>&1 \| tee tests-windows\.log/);
+    expect(installer).toMatch(/publish-failure-annotation\.sh/);
+  });
+
+  it("teste sur Windows avant l'arrivée du payload natif", () => {
+    // Plusieurs tests unitaires décrivent un poste sans outils natifs — c'est le
+    // cas sur ubuntu et en local — et l'un exige que le binaire de restauration
+    // soit absent (« introuvable »). Les exécuter après le téléchargement du
+    // payload les ferait échouer pour une raison d'environnement, pas de code.
+    const installer = jobBlock("installateur");
+    const tests = installer.indexOf("Tests unitaires sur Windows");
+    const payload = installer.indexOf("Récupérer les outils natifs compilés");
+    const dependances = installer.indexOf("Installer les dépendances verrouillées");
+    expect(tests).toBeGreaterThan(-1);
+    expect(payload).toBeGreaterThan(-1);
+    expect(dependances).toBeGreaterThan(-1);
+    expect(dependances).toBeLessThan(tests);
+    expect(tests).toBeLessThan(payload);
   });
 
   it("transmet le payload natif vérifié entre les deux travaux Windows", () => {

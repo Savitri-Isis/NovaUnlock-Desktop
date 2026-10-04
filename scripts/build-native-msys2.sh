@@ -84,6 +84,12 @@ export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 # build output stays readable without changing the user's global Git settings.
 declare -A locked_versions=()
 while read -r project version expected_sha; do
+  # Un checkout Windows (core.autocrlf=true) matérialise ce fichier en CRLF s'il
+  # n'est pas épinglé en LF : la dernière colonne porterait alors un \r final et le
+  # contrôle d'empreinte ci-dessous rejetterait à tort la première ligne. Le retrait
+  # rend la lecture indépendante des réglages Git de la machine.
+  project="${project:-}"; version="${version:-}"; expected_sha="${expected_sha:-}"
+  project="${project%$'\r'}"; version="${version%$'\r'}"; expected_sha="${expected_sha%$'\r'}"
   [[ -z "${project:-}" || "$project" == \#* ]] && continue
   [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail "SHA de source invalide dans $LOCK_FILE pour $project"
 
@@ -101,6 +107,18 @@ done < "$LOCK_FILE"
 
 jobs="$(nproc 2>/dev/null || printf '2')"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || jobs=2
+
+# Un make parallèle (-j) interleave la sortie : l'erreur réelle se retrouve souvent
+# noyée sous les avertissements des fichiers compilés ensuite, bien au-delà de la
+# fin du journal. Les lignes d'erreur sont donc extraites du journal complet,
+# puis la fin est affichée pour situer le composant et la cible.
+show_log_failure() {
+  local log="$1"
+  printf "\n--- lignes d'erreur extraites de %s ---\n" "${log##*/}" >&2
+  grep -nE "error:|\*\*\* |Error [0-9]+" "$log" | head -n 25 >&2 || true
+  printf -- '--- 40 dernières lignes de %s ---\n' "${log##*/}" >&2
+  tail -n 40 "$log" >&2 || true
+}
 
 build_component() {
   local project="$1"
@@ -130,7 +148,13 @@ build_component() {
     # The pinned 1.0.0 release joins -O2 and -DWIN32 in configure.ac, omits
     # <sys/stat.h> on WIN32 (stat/struct stat used by src/idevicerestore.c) and
     # links src/socket.c without ws2_32.
-    patch_suffixes=(win32-cflags win32-stat win32-libs)
+    #
+    # It also calls irecv_init(), which no longer exists in the pinned
+    # libirecovery 1.3.1 public API: the library self-initializes through a
+    # constructor (INITIALIZER(_irecv_init)) and does not export the symbol.
+    # GCC 14, shipped by MSYS2 UCRT64, turns the resulting implicit declaration
+    # into a hard error, so the three leftover calls are dropped.
+    patch_suffixes=(win32-cflags win32-stat win32-libs libirecovery-init)
   fi
   local patch_suffix source_patch
   for patch_suffix in "${patch_suffixes[@]}"; do
@@ -147,15 +171,15 @@ build_component() {
 
   printf '\nCompilation de %s...\n' "$project"
   if ! (cd "$source_dir" && ./autogen.sh "${configure_args[@]}") >"$configure_log" 2>&1; then
-    tail -n 80 "$configure_log" >&2 || true
+    show_log_failure "$configure_log"
     fail "Configuration de $project échouée."
   fi
   if ! (cd "$source_dir" && make V=1 -j"$jobs") >"$build_log" 2>&1; then
-    tail -n 80 "$build_log" >&2 || true
+    show_log_failure "$build_log"
     fail "Compilation de $project échouée."
   fi
   if ! (cd "$source_dir" && make install) >"$install_log" 2>&1; then
-    tail -n 80 "$install_log" >&2 || true
+    show_log_failure "$install_log"
     fail "Installation locale de $project échouée."
   fi
 }
