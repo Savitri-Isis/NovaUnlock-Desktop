@@ -2,14 +2,20 @@
 /*
  * First-build assistant. Uses only Node built-ins, so it also works before npm ci.
  * Native tools are user supplied; no third-party executable is downloaded here.
+ * A folder that cannot be staged is explained and asked again in the same window.
  * No renderer IPC can run this developer-only packaging workflow.
  */
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { inspectNativeDirectory } = require("./verify-native.cjs");
+const { describeNativeSource } = require("./prepare-native.cjs");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
+// A wrong folder choice must not abort the build: users can correct it in the same window.
+const MAX_NATIVE_SELECTION_ATTEMPTS = 3;
+const NATIVE_STEP = "[2/5] Préparation des outils natifs";
+const PICK_PROMPT = "Choisissez le paquet libimobiledevice Windows x64 déjà extrait. Aucun outil natif n'est téléchargé par cet assistant.";
 // Keep in sync with package.json engines (including the locked test dependencies).
 function supportedNodeVersion(version) {
   const [major, minor, patch] = version.replace(/^v/, "").split(".").map(Number);
@@ -73,7 +79,13 @@ function runPackaging({
         "(22.22.2+ dans la branche 22, ou 24.15.0+ dans la branche 24), puis relancez l'assistant."
     );
   }
-  for (const file of ["package.json", "package-lock.json", "scripts/prepare-native.cjs", "scripts/verify-native.cjs"]) {
+  for (const file of [
+    "package.json",
+    "package-lock.json",
+    "scripts/prepare-native.cjs",
+    "scripts/prepare-native-archive.cjs",
+    "scripts/verify-native.cjs",
+  ]) {
     if (!fs.existsSync(path.join(root, file))) {
       throw new Error(`Projet incomplet : ${file} est absent. Conservez l'assistant dans le dossier du projet complet.`);
     }
@@ -85,31 +97,80 @@ function runPackaging({
   // All npm commands below are fixed strings. Never interpolate a path or user input
   // into cmd.exe; use node(script, [path]) for the user-selected directory instead.
   const npm = (command) => exec(cmd, ["/d", "/s", "/c", `npm.cmd ${command}`], options);
-  const step = (label, run) => {
-    log(`\n${label}`);
+  const mustSucceed = (label, run) => {
     const result = run();
     if (result.error || result.status !== 0) {
       throw new Error(`${label} — échec${result.error ? ` : ${result.error.message}` : ` (code ${result.status ?? "interruption"})`}. Consultez les messages ci-dessus. Les étapes suivantes n'ont pas été lancées.`);
     }
+    return result;
+  };
+  const step = (label, run) => {
+    log(`\n${label}`);
+    return mustSucceed(label, run);
+  };
+
+  /**
+   * Stage a replacement archive detected in the selected folder. Extraction is local,
+   * never downloads anything, and the stager validates the package before copying.
+   */
+  const stageDetectedArchive = (report) => {
+    if (!report.archive) return false;
+    log(`\nAucun fichier extrait dans ce dossier, mais l'archive suivante a été détectée :\n  ${report.archive}\nExtraction locale en cours (aucun fichier n'est exécuté ni téléchargé)…`);
+    const result = exec(process.execPath, [path.join(root, "scripts", "prepare-native-archive.cjs"), report.archive], options);
+    if (result.error || result.status !== 0) {
+      log("\nCette archive n'a pas fourni un paquet Windows x64 complet.");
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * Ask for the extracted package until one can be staged. Each rejected choice is
+   * explained with the inspected folder, the missing files and the archives detected.
+   */
+  const selectAndStageNativePayload = () => {
+    for (let attempt = 1; attempt <= MAX_NATIVE_SELECTION_ATTEMPTS; attempt += 1) {
+      log(`\n${PICK_PROMPT}`);
+      const picked = selectDirectory();
+      if (!picked) return { canceled: true };
+
+      const report = describeNativeSource(picked);
+      if (report.complete) {
+        mustSucceed(NATIVE_STEP, () => node("prepare-native.cjs", [picked, "--require-complete"]));
+        return { canceled: false };
+      }
+      log(`\n${report.message}`);
+      // A missing or unreadable path is reported by the staging script itself, exactly
+      // as before. Only an inspected but unusable folder triggers another selection.
+      if (report.kind !== "unusable") {
+        mustSucceed(NATIVE_STEP, () => node("prepare-native.cjs", [picked, "--require-complete"]));
+        return { canceled: false };
+      }
+      if (stageDetectedArchive(report)) return { canceled: false };
+
+      if (attempt === MAX_NATIVE_SELECTION_ATTEMPTS) {
+        throw new Error(`${NATIVE_STEP} — échec : aucun paquet complet n'a été choisi après ${MAX_NATIVE_SELECTION_ATTEMPTS} essais. Consultez les messages ci-dessus. Les étapes suivantes n'ont pas été lancées.`);
+      }
+      log(`\nChoisissez de nouveau le dossier qui contient les fichiers .exe et .dll extraits (essai ${attempt + 1} sur ${MAX_NATIVE_SELECTION_ATTEMPTS}). Fermez le sélecteur pour annuler.`);
+    }
+    return { canceled: true };
   };
 
   log("NovaUnlock — Création guidée de l'installateur Windows\nGardez cette fenêtre ouverte jusqu'à la fin. Internet est nécessaire pour les dépendances de compilation.");
   step("[1/5] Vérification de npm", () => npm("--version"));
 
-  let source = env.NOVAUNLOCK_NATIVE_DIR?.trim();
-  if (!source && !inspectNativeDirectory(path.join(root, "native", "libimobiledevice")).complete) {
-    log("\nChoisissez le paquet libimobiledevice Windows x64 déjà extrait. Aucun outil natif n'est téléchargé par cet assistant.");
-    source = selectDirectory();
-    if (!source) {
+  const environmentSource = env.NOVAUNLOCK_NATIVE_DIR?.trim();
+  if (environmentSource) {
+    step(NATIVE_STEP, () => node("prepare-native.cjs", [environmentSource, "--require-complete"]));
+  } else if (inspectNativeDirectory(path.join(root, "native", "libimobiledevice")).complete) {
+    log("\n[2/5] Réutilisation des outils déjà présents dans native/libimobiledevice.");
+  } else {
+    log(`\n${NATIVE_STEP}`);
+    const selection = selectAndStageNativePayload();
+    if (selection.canceled) {
       log("\nOpération annulée. Aucune dépendance n'a été installée et aucun packaging n'a été lancé.");
       return { canceled: true };
     }
-  }
-
-  if (source) {
-    step("[2/5] Préparation des outils natifs", () => node("prepare-native.cjs", [source, "--require-complete"]));
-  } else {
-    log("\n[2/5] Réutilisation des outils déjà présents dans native/libimobiledevice.");
   }
   step("[3/5] Vérification des fichiers natifs attendus", () => node("verify-native.cjs"));
   step("[4/5] Installation des dépendances verrouillées (npm ci)", () => npm("ci --include=dev"));

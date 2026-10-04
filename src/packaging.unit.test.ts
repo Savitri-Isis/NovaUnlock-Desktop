@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const { runPackaging, selectNativeDirectory, supportedNodeVersion } = require("../scripts/package-windows.cjs");
 const { required, inspectNativeDirectory } = require("../scripts/verify-native.cjs");
+const { describeNativeSource } = require("../scripts/prepare-native.cjs");
 const roots: string[] = [];
 
 function fixture() {
@@ -15,7 +16,7 @@ function fixture() {
   fs.mkdirSync(path.join(root, "scripts"));
   fs.writeFileSync(path.join(root, "package.json"), "{}");
   fs.writeFileSync(path.join(root, "package-lock.json"), "{}");
-  for (const script of ["prepare-native.cjs", "verify-native.cjs"]) {
+  for (const script of ["prepare-native.cjs", "prepare-native-archive.cjs", "verify-native.cjs"]) {
     fs.copyFileSync(path.resolve("scripts", script), path.join(root, "scripts", script));
   }
   return root;
@@ -214,5 +215,143 @@ describe("Sources natives Windows", () => {
     expect(entries.every((entry) => entry.length === 3)).toBe(true);
     expect(commits.every((commit) => /^[0-9a-f]{40}$/.test(commit))).toBe(true);
     expect(new Set(commits).size).toBe(commits.length);
+  });
+});
+
+describe("Dossier natif refusé puis corrigé", () => {
+  function selection(root: string, wrong: string, correct: string) {
+    const config = assistant(root);
+    config.selectDirectory.mockReturnValueOnce(wrong).mockReturnValueOnce(correct);
+    return config;
+  }
+
+  it("explique pourquoi un dossier est refusé, puis demande de nouveau au lieu d'arrêter", () => {
+    const root = fixture();
+    const wrong = path.join(root, "Téléchargements");
+    fs.mkdirSync(wrong);
+    fs.writeFileSync(path.join(wrong, "idevicebackup2.exe"), "test fixture, never executed");
+    const correct = path.join(root, "paquet extrait", "bin");
+    payload(correct);
+
+    const config = selection(root, wrong, correct);
+    expect(runPackaging(config)).toEqual({ canceled: false, outputDirectory: path.join(root, "release") });
+
+    const messages = config.log.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(config.selectDirectory).toHaveBeenCalledTimes(2);
+    expect(messages).toContain("Outils de diagnostic manquants : ideviceinfo.exe et idevice_id.exe");
+    expect(messages).toContain("idevicebackup2.exe");
+    expect(messages).toContain("essai 2 sur 3");
+    const prepare = config.exec.mock.calls.filter((call) => String(call[1][0]).endsWith("prepare-native.cjs"));
+    expect(prepare).toHaveLength(1);
+    expect(prepare[0][1]).toEqual([path.join(root, "scripts", "prepare-native.cjs"), correct, "--require-complete"]);
+  });
+
+  it("extrait localement l'archive détectée dans le dossier choisi, sans jamais l'exécuter", () => {
+    const root = fixture();
+    const wrong = path.join(root, "Téléchargements");
+    const archive = path.join(wrong, "libimobiledevice-win-x64.zip");
+    fs.mkdirSync(wrong);
+    fs.writeFileSync(archive, "archive factice, jamais ouverte par le test");
+
+    const config = assistant(root);
+    config.selectDirectory.mockReturnValue(wrong);
+    runPackaging(config);
+
+    const staged = config.exec.mock.calls.find((call) => String(call[1][0]).endsWith("prepare-native-archive.cjs"));
+    expect(staged?.[1]).toEqual([path.join(root, "scripts", "prepare-native-archive.cjs"), archive]);
+    expect(config.selectDirectory).toHaveBeenCalledTimes(1);
+    expect(config.exec.mock.calls.some((call) => call[1][0].endsWith("verify-native.cjs"))).toBe(true);
+  });
+
+  it("continue à demander un dossier si l'archive détectée est inutilisable", () => {
+    const root = fixture();
+    const wrong = path.join(root, "Téléchargements");
+    const archive = path.join(wrong, "libimobiledevice-win-x64.zip");
+    fs.mkdirSync(wrong);
+    fs.writeFileSync(archive, "archive factice");
+    const correct = path.join(root, "paquet", "win64");
+    payload(correct);
+
+    const config = selection(root, wrong, correct);
+    config.exec.mockImplementation((command: string, args: string[] = []) =>
+      String(args[0]).endsWith("prepare-native-archive.cjs") ? { status: 1 } : { status: 0, stdout: "", stderr: "" }
+    );
+
+    expect(runPackaging(config)).toEqual({ canceled: false, outputDirectory: path.join(root, "release") });
+    expect(config.selectDirectory).toHaveBeenCalledTimes(2);
+  });
+
+  it("s'arrête clairement après trois dossiers inutilisables, sans npm ci ni Explorer", () => {
+    const root = fixture();
+    const empty = path.join(root, "vide");
+    fs.mkdirSync(empty);
+    const config = assistant(root);
+    config.selectDirectory.mockReturnValue(empty);
+
+    expect(() => runPackaging(config)).toThrow(/3 essais/);
+    expect(config.selectDirectory).toHaveBeenCalledTimes(3);
+    expect(config.exec).toHaveBeenCalledTimes(1); // npm --version only
+    expect(config.exec.mock.calls.some((call) => call[0] === "explorer.exe")).toBe(false);
+  });
+
+  it("annule sans rien installer si le sélecteur est fermé pendant une nouvelle tentative", () => {
+    const root = fixture();
+    const empty = path.join(root, "vide");
+    fs.mkdirSync(empty);
+    const config = assistant(root);
+    config.selectDirectory.mockReturnValueOnce(empty).mockReturnValueOnce(null);
+
+    expect(runPackaging(config)).toEqual({ canceled: true });
+    expect(config.exec).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Diagnostic du dossier natif choisi", () => {
+  it("accepte un paquet complet, y compris imbriqué", () => {
+    const root = fixture();
+    const source = path.join(root, "archive", "libimobiledevice", "bin");
+    payload(source);
+    const report = describeNativeSource(path.dirname(path.dirname(source)));
+    expect(report.kind).toBe("usable");
+    expect(report.complete).toBe(true);
+    expect(report.payload).toBe(source);
+  });
+
+  it("signale l'archive ZIP non extraite et interdit l'extraction d'un fichier choisi par erreur", () => {
+    const root = fixture();
+    const archive = path.join(root, "libimobiledevice-win-x64.zip");
+    fs.writeFileSync(archive, "archive factice");
+    const zipped = describeNativeSource(root);
+    expect(zipped.kind).toBe("unusable");
+    expect(zipped.archive).toBe(archive);
+    expect(zipped.message).toContain("libimobiledevice-win-x64.zip");
+
+    const file = describeNativeSource(archive);
+    expect(file.kind).toBe("unknown");
+    expect(file.message).toContain("Extrayez-la");
+  });
+
+  it("distingue un dossier introuvable d'un dossier sans paquet", () => {
+    const root = fixture();
+    const missing = describeNativeSource(path.join(root, "absent"));
+    expect(missing.kind).toBe("unknown");
+    expect(missing.message).toContain("Dossier introuvable");
+
+    const empty = path.join(root, "vide");
+    fs.mkdirSync(empty);
+    const report = describeNativeSource(empty);
+    expect(report.kind).toBe("unusable");
+    expect(report.payload).toBeNull();
+    expect(report.message).toContain("Aucun fichier .exe n'a été trouvé");
+  });
+
+  it("décrit un paquet incomplet sans DLL au lieu de copier des binaires inutilisables", () => {
+    const root = fixture();
+    const source = path.join(root, "paquet", "bin");
+    payload(source, [...required]);
+    const report = describeNativeSource(source);
+    expect(report.complete).toBe(false);
+    expect(report.payload).toBe(source);
+    expect(report.message).toContain("Aucune DLL à côté de ces exécutables");
   });
 });

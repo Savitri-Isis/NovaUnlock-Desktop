@@ -38,6 +38,7 @@ function verifyNative(location = directory) {
     console.error("\nOption source : installez MSYS2 x64, puis double-cliquez sur Construire-outils-libimobiledevice-Windows.cmd.");
     console.error("Option archive : utilisez Creer-installateur-Windows.cmd et sélectionnez un paquet extrait de confiance.");
     console.error('Ou utilisez : npm run prepare:native -- "C:\\chemin\\vers\\dossier-extrait"');
+    console.error('Ou archive ZIP : npm run prepare:native:archive -- "C:\\chemin\\vers\\paquet.zip"');
     return false;
   }
   console.log(`libimobiledevice vérifié : ${required.length} exécutables et ${dlls.length} DLL(s) seront inclus dans l'installateur.`);

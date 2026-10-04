@@ -36,6 +36,13 @@ Depuis le dossier complet du projet, double-cliquez sur **`Creer-installateur-Wi
 
 Si aucun payload complet n’est déjà présent dans `native/libimobiledevice`, une fenêtre demande de choisir le dossier extrait de confiance. L’assistant prépare les fichiers, les vérifie, installe les dépendances verrouillées puis construit l’installateur et le portable dans `release`. Il s’arrête en cas d’erreur et conserve les messages dans la console ouverte. Une source de remplacement incomplète est refusée avant toute copie, même si un ancien paquet complet est déjà présent.
 
+Un dossier refusé n’arrête plus l’assistant : le message indique le dossier examiné, le nombre de `.exe` et de DLL trouvés, les outils manquants et les archives détectées, puis le sélecteur se rouvre (trois essais, fermeture pour annuler). Si le dossier choisi contient encore le paquet sous forme d’archive ZIP au nom évocateur, celle-ci est extraite localement par le préparateur d’archive (aucun téléchargement, aucune exécution) et vérifiée avant copie. Pour repartir d’une archive précise, la commande documentée reste disponible :
+
+```powershell
+npm run prepare:native:archive -- "C:\chemin\vers\libimobiledevice-win-x64.zip"
+npm run verify:native
+```
+
 ## Importer une archive ZIP complète
 
 Le préparateur d’archive n’effectue aucun téléchargement et n’exécute aucun fichier importé :
