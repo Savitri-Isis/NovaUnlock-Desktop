@@ -1,0 +1,11 @@
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -17,7 +17,7 @@ AM_LDFLAGS = \
+ 	$(libzip_LIBS) \
+ 	$(zlib_LIBS) \
+ 	$(openssl_LIBS) \
+-	$(libcurl_LIBS)
++	$(libcurl_LIBS) -lws2_32
+ 
+ AM_LDADD = $(AC_LDADD)
+ 

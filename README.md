@@ -45,7 +45,15 @@ Si vous ne disposez pas déjà d’un paquet natif de confiance, vous n’avez p
 
 Le script ne télécharge pas d’exécutables `libimobiledevice` précompilés et ne lance aucune commande sur un appareil. Il place le payload local dans `native/libimobiledevice` et les journaux d’échec dans `.native-build/logs`; les binaires natifs et l’avis généré sont ignorés par Git par défaut. Les sources sont compilées sur le PC Windows et ne sont pas vérifiées matériellement dans le sandbox.
 
-**Erreur GCC `argument to '-O'` dans `idevicerestore`** : la version amont 1.0.0 concatène par erreur `-O2` et `-DWIN32`. Le constructeur applique désormais un correctif local à `configure.ac`, après vérification du commit et avant génération des fichiers de compilation. Récupérez les fichiers du dépôt à jour (y compris `scripts/patches`), puis relancez `Construire-outils-libimobiledevice-Windows.cmd`. Aucune suppression manuelle du dossier temporaire n’est nécessaire. Les journaux de compilation affichent les commandes complètes (`make V=1`).
+**Compilation native de `idevicerestore` sous Windows** : la version amont 1.0.0 ne se compile pas telle quelle sous MSYS2. Le constructeur applique trois correctifs locaux, versionnés dans [`scripts/patches`](scripts/patches) et appliqués après vérification du commit épinglé, **avant** la génération de `configure` et des `Makefile` :
+
+- `argument to '-O' should be a non-negative integer` : `configure.ac` colle `-O2` et `-DWIN32` ;
+- `storage size of 'fst' isn't known` ou `implicit declaration of function 'stat'` : `src/common.h` masque `<sys/stat.h>` quand `WIN32` est défini ;
+- échec d’édition de liens sur les symboles winsock (`socket`, `htons`, …) : `src/Makefile.am` ne lie pas `ws2_32`, utilisé par `src/socket.c`.
+
+Récupérez les fichiers du dépôt à jour (y compris `scripts/patches`), puis relancez `Construire-outils-libimobiledevice-Windows.cmd`. Aucune suppression manuelle du dossier temporaire n’est nécessaire. Les journaux de compilation affichent les commandes complètes (`make V=1`) et sont conservés dans `.native-build/logs` en cas d’échec. Un correctif qui ne s’applique plus (version amont modifiée, correctif déjà appliqué) arrête la construction au lieu d’être ignoré.
+
+Le constructeur désactive aussi l’avis Git **detached HEAD** pour ses propres clones (`git -c advice.detachedHead=false`) : votre configuration Git personnelle n’est jamais modifiée. Pour le désactiver globalement (facultatif) : `git config --global advice.detachedHead false`.
 
 Si MSYS2 est installé ailleurs que `C:\msys64`, définissez `MSYS2_ROOT` sur son dossier avant de lancer le fichier `.cmd`.
 
@@ -136,6 +144,14 @@ npm run package:win:portable   # Binaire portable Windows x64 uniquement
 ```
 
 Les fichiers d'installation sont produits dans `release/`.
+
+Les correctifs Windows des sources natives disposent de tests hors ligne, lançables sans MSYS2 ni Windows :
+
+```bash
+bash scripts/tests/idevicerestore-cflags.sh      # -O2 et -DWIN32 restent séparés
+bash scripts/tests/idevicerestore-win32-stat.sh  # stat/struct stat déclarés sous WIN32
+bash scripts/tests/idevicerestore-win32-libs.sh  # ws2_32 lié pour socket.c
+```
 
 ---
 

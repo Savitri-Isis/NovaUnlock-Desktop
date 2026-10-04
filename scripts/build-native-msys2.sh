@@ -72,19 +72,23 @@ export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 
 # Clone each official release tag and verify its resolved commit before running
 # any upstream build script. A moved/replaced tag therefore fails closed.
+# The detached-HEAD advice is disabled for these checkouts only (`-c`), so the
+# build output stays readable without changing the user's global Git settings.
+declare -A locked_versions=()
 while read -r project version expected_sha; do
   [[ -z "${project:-}" || "$project" == \#* ]] && continue
   [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail "SHA de source invalide dans $LOCK_FILE pour $project"
 
   source_dir="$SOURCE_ROOT/$project"
   printf '\nRécupération de %s %s depuis libimobiledevice/%s...\n' "$project" "$version" "$project"
-  git clone --quiet --depth 1 --branch "$version" \
+  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$version" \
     "https://github.com/libimobiledevice/$project.git" "$source_dir" || \
     fail "Impossible de cloner la version épinglée $project $version."
 
   actual_sha="$(git -C "$source_dir" rev-parse HEAD)"
   [[ "$actual_sha" == "$expected_sha" ]] || \
     fail "$project $version ne correspond pas au commit épinglé (attendu $expected_sha, reçu $actual_sha)."
+  locked_versions["$project"]="$version"
 done < "$LOCK_FILE"
 
 jobs="$(nproc 2>/dev/null || printf '2')"
@@ -107,15 +111,31 @@ build_component() {
     configure_args+=(--without-readline)
   fi
 
-  # The pinned 1.0.0 release joins -O2 and -DWIN32 without a space.
-  # Patch only verified sources, before autogen generates configure/Makefiles.
+  # Local, version-pinned fixes for upstream Windows build breakage. They are
+  # applied to the verified commit before autogen generates configure/Makefiles.
+  # A missing, stale or already applied patch stops the build instead of
+  # producing a payload built from unexpected sources.
+  local project_version="${locked_versions[$project]:-}"
+  [[ -n "$project_version" ]] || fail "Version absente dans $LOCK_FILE pour $project."
+  local patch_suffixes=()
   if [[ "$project" == "idevicerestore" ]]; then
-    local source_patch="$SCRIPT_DIR/patches/idevicerestore-1.0.0-win32-cflags.patch"
-    if ! git -C "$source_dir" apply --check "$source_patch" ||
-       ! git -C "$source_dir" apply "$source_patch"; then
-      fail "Application du correctif CFLAGS Windows de $project échouée."
-    fi
+    # The pinned 1.0.0 release joins -O2 and -DWIN32 in configure.ac, omits
+    # <sys/stat.h> on WIN32 (stat/struct stat used by src/idevicerestore.c) and
+    # links src/socket.c without ws2_32.
+    patch_suffixes=(win32-cflags win32-stat win32-libs)
   fi
+  local patch_suffix source_patch
+  for patch_suffix in "${patch_suffixes[@]}"; do
+    source_patch="$SCRIPT_DIR/patches/${project}-${project_version}-${patch_suffix}.patch"
+    [[ -f "$source_patch" ]] || \
+      fail "Correctif local absent : ${source_patch##*/}. Ajoutez-le dans scripts/patches avant de compiler $project."
+    if ! git -C "$source_dir" apply --check "$source_patch"; then
+      fail "Le correctif ${source_patch##*/} ne s'applique pas à $project $project_version : sources amont modifiées ou correctif déjà appliqué."
+    fi
+    if ! git -C "$source_dir" apply "$source_patch"; then
+      fail "Application du correctif ${source_patch##*/} échouée."
+    fi
+  done
 
   printf '\nCompilation de %s...\n' "$project"
   if ! (cd "$source_dir" && ./autogen.sh "${configure_args[@]}") >"$configure_log" 2>&1; then
@@ -221,9 +241,10 @@ NovaUnlock — native Windows tools
 
 This payload was built locally from release sources in the official
 https://github.com/libimobiledevice organization. Source commit IDs are pinned
-in scripts/native-sources.lock. A local patch to idevicerestore 1.0.0 adds
-the missing space between -O2 and -DWIN32 in configure.ac (see
-scripts/patches/idevicerestore-1.0.0-win32-cflags.patch).
+in scripts/native-sources.lock. The pinned idevicerestore sources receive the
+local Windows patch set kept in scripts/patches (missing space between -O2 and
+-DWIN32 in configure.ac, <sys/stat.h> on WIN32, and -lws2_32 for winsock); each
+patch is applied only after the pinned commit has been verified.
 The tools and bundled libraries retain their
 respective licenses; see the notices and license texts below.
 
