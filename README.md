@@ -61,6 +61,15 @@ Le lanceur se place lui-même dans le dossier du projet, contrôle Node/npm, pr�
 
 Un paquet complet déjà présent dans `native/libimobiledevice` est réutilisé. Une variable `NOVAUNLOCK_NATIVE_DIR` déjà définie permet de le remplacer sans ouvrir le sélecteur. La source de remplacement doit être complète : les anciens fichiers de destination ne peuvent pas masquer les fichiers manquants dans la source.
 
+Si le dossier choisi ne contient pas le paquet extrait, l’assistant ne s’arrête plus sur une seule ligne : il affiche ce qui a été examiné (nombre de sous-dossiers, de `.exe` et de DLL), les outils manquants et les archives détectées, puis rouvre le sélecteur (trois essais au maximum, fermeture du sélecteur pour annuler).
+
+Deux pièges fréquents sont traités automatiquement :
+
+- **le paquet est encore dans son archive ZIP** : si une archive au nom évocateur (`libimobiledevice`, `idevice`, `irecovery`, `ios`, `iphone`, `ipad`, `apple`) se trouve dans le dossier choisi, elle est extraite localement avec le même préparateur que `prepare:native:archive` — aucun téléchargement, aucun fichier exécuté, et le contenu est vérifié avant toute copie ;
+- **seuls les `.exe` ont été copiés** : le message rappelle que les DLL d’exécution doivent accompagner les `.exe` dans le même dossier, et indique où des DLL ont été trouvées.
+
+L’erreur `le dossier ne contient pas ideviceinfo.exe et idevice_id.exe` signifie donc toujours que la sélection ne contient pas les binaires extraits : choisissez le sous-dossier qui contient réellement les `.exe` et les `.dll` (souvent `bin`), ou l’archive ZIP complète.
+
 À la fin, l’Explorateur ouvre **`release`**, qui contient deux fichiers distincts :
 
 - `NovaUnlock-Setup-<version>-x64.exe` : installateur Windows ;
