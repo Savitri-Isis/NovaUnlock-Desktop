@@ -19,6 +19,7 @@ NovaUnlock Desktop
 │   └── src/usb-scanner.ts           # Couche libimobiledevice / USB
 ├── electron/preload/                # Bridge context-isolated
 ├── src/                             # Interface React
+│   └── lib/jailbreak/               # Catalogue documentaire des méthodes de jailbreak
 ├── native/libimobiledevice/         # Documentation + payload Windows local (ignoré par Git)
 └── scripts/                         # Staging et vérification avant packaging
 ```
@@ -203,6 +204,74 @@ Le prévol est toujours non destructif (`dryRun: true`). L'action réelle est un
 - Une sauvegarde exige un appareil démarré, déverrouillé et appairé. Une restauration officielle exige Recovery ou DFU et un IPSW que les serveurs Apple acceptent de signer.
 - Si l'état Find My / Activation Lock ne peut pas être explicitement vérifié, NovaUnlock bloque les restaurations maître plutôt que de deviner.
 - Aucune fonctionnalité ne contourne l'Activation Lock, iCloud, une SIM, Temps d'écran ou un code d'accès.
+
+---
+
+## Catalogue jailbreak et application assistée
+
+L'écran **Assistant jailbreak** recense les méthodes publiques connues, calcule leur compatibilité avec
+l'appareil détecté, puis **retient automatiquement la méthode adaptée** et propose l'action réellement
+réalisable depuis ce PC Windows.
+
+- **Périmètre** : Dopamine, palera1n, TrollStore, roothide Bootstrap, XinaA15, Serotonin, Fugu15,
+  unc0ver, checkra1n, Taurine, Odyssey, Chimera, Electra, Meridian, Yalu, h3lix, Pangu 9, Home Depot,
+  Phœnix, puis l'inventaire des méthodes antérieures (TaiG, evasi0n7, evasi0n, Absinthe, JailbreakMe,
+  redsn0w, limera1n, greenpois0n, blackra1n, EtasonJB…) et des variantes 2024-2026.
+- **Compatibilité** : la puce est déduite de l'identifiant matériel (`ProductType`, ex. `iPhone10,3`)
+  ou choisie manuellement, puis comparée aux plages publiées par chaque projet. Trois verdicts sont
+  affichés : compatible, hors plage (la puce est couverte, pas la version iOS) et non prise en charge.
+- **Métadonnées vérifiées le [`CATALOGUE_VERIFIED_AT`](src/lib/jailbreak/methods.ts)** à partir des
+  pages officielles des projets et de la fiche de référence
+  [The Apple Wiki](https://theapplewiki.com/wiki/Jailbreak) ; chaque entrée rappelle sa date de
+  vérification et sa source primaire.
+- **Liens externes** : le renderer isolé ne peut ouvrir que les hôtes d'une liste blanche
+  (`electron/src/external-links.ts`) — sites officiels des projets, guide communautaire `ios.cfw.guide`,
+  `theapplewiki.com`, `github.com`, `ipsw.me` et les domaines Apple. Tout le reste est refusé.
+- **Aucune charge utile** : NovaUnlock ne télécharge, n'installe et n'exécute aucun outil de jailbreak.
+  Les étapes affichées sont exécutées par l'utilisateur, depuis les sources officielles, à ses risques.
+
+### Sélection automatique et application assistée
+
+1. Le renderer lit le profil réel de l'appareil (`ProductType` → puce, `ProductVersion` → version iOS),
+   calcule les verdicts de compatibilité, puis retient la première méthode compatible selon
+   `AUTO_PRIORITY` (`src/lib/jailbreak/execution.ts`). L'utilisateur peut toujours remplacer ce choix.
+2. Le plan d'application décrit ce qui peut être fait :
+   - **installation-ipa** : NovaUnlock installe sur l'appareil appairé l'IPA que l'utilisateur a
+     téléchargé depuis la source officielle (outil natif `ideviceinstaller.exe`) ;
+   - **action manuelle** : la méthode ne peut pas être lancée depuis Windows (outil macOS/Linux,
+     installeur sur l'appareil, navigateur…). Les étapes sont affichées, **aucun processus n'est lancé** ;
+   - **indisponible** : entrée d'inventaire ou outil non fiable.
+3. L'application n'est possible que si le plan est *prêt*, après consentement explicite (case
+   propriétaire) et saisie du mot de confirmation `JAILBREAK` — le même schéma que les restaurations
+   maître. L'opération est suivie en direct, une seule à la fois, et consignée dans le journal local
+   d'audit à identifiant d'appareil haché.
+
+| Étendue | Méthodes | Ce que NovaUnlock fait réellement |
+| --- | --- | --- |
+| Installation IPA | Dopamine, XinaA15, unc0ver, Taurine, Odyssey, Chimera, Electra, Meridian, Yalu, h3lix, Phœnix | Vérifie l'IPA (conteneur ZIP + SHA-256) puis l'installe via `ideviceinstaller` ; la procédure « Jailbreak » se lance ensuite **sur l'appareil** |
+| Étapes manuelles | TrollStore, roothide Bootstrap, Serotonin, Fugu15, variantes 2024-2026 | Affiche la marche à suivre, aucune commande exécutée |
+| Étapes manuelles (poste incompatible) | palera1n, checkra1n | Exigent macOS ou Linux : documentés, jamais lancés depuis ce PC |
+| Référence seulement | Pangu 9, Home Depot, inventaire historique iOS 3–8 | Fiche documentaire, aucune action |
+
+Ce qui est **hors de portée par conception** : NovaUnlock ne télécharge aucun binaire de jailbreak, ne
+lance aucun exécutable de jailbreak, ne contourne ni code d'accès, ni Activation Lock/iCloud, ni SIM,
+ni Temps d'écran. Les outils qui s'exécutent sur l'appareil (Dopamine, palera1n, TrollStore…) sont
+toujours lancés par l'utilisateur lui-même, après vérification de leur provenance.
+
+### Contrat IPC et garanties
+
+- `jailbreak:capabilities` — présence de `ideviceinstaller.exe` et état d'appairage réel.
+- `jailbreak:select-ipa` — sélecteur de fichier `.ipa` local (aucun téléchargement).
+- `jailbreak:apply` — action validée dans le processus principal : identifiant de méthode borné,
+  **source en liste blanche**, chemin **absolu** en `.ipa`, conteneur ZIP vérifié, empreinte SHA-256
+  affichée ; puis exécution de `ideviceinstaller.exe -u <udid> -i <ipa>` avec délai maximal de 15 min.
+- `jailbreak:apply-status` — suivi d'opération (une seule à la fois).
+
+Le catalogue est un jeu de données typé (`src/lib/jailbreak/methods.ts`), évalué par un moteur pur
+(`compatibility.ts`) et piloté par `execution.ts`, couverts par `compatibility.test.ts`,
+`jailbreak-execution.unit.test.ts` (validation d'action, inspection d'IPA, chemin d'installation avec
+outil et appareil simulés), `external-links.unit.test.ts` et `Jailbreak.test.tsx`. Le seul autre IPC
+ajouté est `shell:open-external`, également validé par liste blanche.
 
 ---
 

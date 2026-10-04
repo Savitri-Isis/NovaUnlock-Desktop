@@ -148,6 +148,17 @@ function activeUdid(): string | null {
     : null;
 }
 
+/**
+ * UDID de l'appareil actuellement appairé, ou null. Utilisé pour associer un
+ * journal d'audit haché à l'appareil sans exposer son identifiant en clair.
+ */
+export function getConnectedUdid(): string | null {
+  return activeUdid();
+}
+
+/** Exécuteur natif partagé (installation d'IPA, outils diagnostics). */
+export const runNativeToolCommand = runNativeCommand;
+
 function deviceArgs(args: string[] = []): string[] {
   const udid = activeUdid();
   return udid ? ["-u", udid, ...args] : args;

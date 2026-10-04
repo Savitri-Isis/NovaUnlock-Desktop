@@ -19,6 +19,9 @@ export const NATIVE_TOOL_FILES = {
   restore: "idevicerestore.exe",
   recovery: "irecovery.exe",
   enterRecovery: "ideviceenterrecovery.exe",
+  // Facultatif : uniquement requis par l'installation assistée d'un IPA
+  // (jailbreak). Jamais téléchargé automatiquement.
+  installer: "ideviceinstaller.exe",
 } as const;
 
 export type NativeToolName = keyof typeof NATIVE_TOOL_FILES;
